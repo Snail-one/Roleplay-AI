@@ -1,9 +1,10 @@
 {
   "api": {
-    "provider": "openai",
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "your-api-key",
-    "model": "your-model",
+    "provider": "mimo",
+    "protocol": "chat_completions",
+    "base_url": "",
+    "api_key": "your-mimo-api-key",
+    "model": "mimo-v2.5-pro",
     "timeout_seconds": 60,
     "max_output_tokens": 4096
   },

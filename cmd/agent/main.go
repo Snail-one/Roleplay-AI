@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultSystemPrompt = "你是一个简洁、可靠的 AI 助手。需要准确时间或数学计算时，应使用可用工具。"
+	defaultSystemPrompt = config.DefaultSystemPrompt
 	maxInputSize        = 1 << 20
 )
 
@@ -31,9 +31,14 @@ func main() {
 }
 
 func run(configPath string) error {
-	appConfig, err := config.Load(configPath)
+	appConfig, created, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return err
+	}
+	if created {
+		fmt.Printf("已生成默认配置文件：%s\n", configPath)
+		fmt.Println("请填写 api.api_key 后重新启动。")
+		return nil
 	}
 
 	client, err := provider.New(provider.Config{

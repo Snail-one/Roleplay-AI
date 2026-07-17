@@ -102,6 +102,48 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "config.json")
+	loaded, created, err := config.LoadOrCreate(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreate() error = %v", err)
+	}
+	if !created {
+		t.Fatal("LoadOrCreate() created = false, want true")
+	}
+	if loaded.API.Provider != "mimo" || loaded.API.Protocol != "chat_completions" || loaded.API.Model != "mimo-v2.5-pro" {
+		t.Fatalf("default config = %#v", loaded)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if permission := info.Mode().Perm(); permission != 0o600 {
+		t.Fatalf("config permission = %o, want 600", permission)
+	}
+	fromDisk, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("generated config cannot be loaded: %v", err)
+	}
+	if fromDisk.Agent.SystemPrompt != config.DefaultSystemPrompt {
+		t.Fatalf("system prompt = %q", fromDisk.Agent.SystemPrompt)
+	}
+}
+
+func TestLoadOrCreatePreservesExistingConfig(t *testing.T) {
+	path := writeConfig(t, `{"api":{"provider":"deepseek","model":"model"}}`)
+	loaded, created, err := config.LoadOrCreate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("LoadOrCreate() overwrote existing config")
+	}
+	if loaded.API.Provider != "deepseek" || loaded.API.Model != "model" {
+		t.Fatalf("loaded config = %#v", loaded)
+	}
+}
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")

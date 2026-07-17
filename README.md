@@ -20,11 +20,13 @@
 
 ## 配置
 
-复制示例配置，然后填写实际使用的模型和密钥：
+首次运行时，如果配置文件不存在，程序会自动生成默认 MiMo 配置并提示填写密钥：
 
 ```bash
-cp config.example.json config.json
+go run ./cmd/agent
 ```
+
+程序不会覆盖已有配置。自动生成的文件权限为 `0600`；也可以手动复制 `config.example.json`。
 
 ```json
 {

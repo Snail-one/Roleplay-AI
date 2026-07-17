@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
-const maxConfigSize = 1 << 20
+const (
+	maxConfigSize       = 1 << 20
+	DefaultSystemPrompt = "你是一个简洁、可靠的 AI 助手。需要准确时间或数学计算时，应使用可用工具。"
+)
 
 type Config struct {
 	API   APIConfig   `json:"api"`
@@ -29,6 +33,63 @@ type APIConfig struct {
 type AgentConfig struct {
 	SystemPrompt  string `json:"system_prompt"`
 	MaxIterations int    `json:"max_iterations"`
+}
+
+func Default() Config {
+	return Config{
+		API: APIConfig{
+			Provider:        "mimo",
+			Protocol:        "chat_completions",
+			Model:           "mimo-v2.5-pro",
+			TimeoutSeconds:  60,
+			MaxOutputTokens: 4096,
+		},
+		Agent: AgentConfig{
+			SystemPrompt:  DefaultSystemPrompt,
+			MaxIterations: 8,
+		},
+	}
+}
+
+// LoadOrCreate loads path, or creates a secure default configuration when it
+// does not exist. Existing files are never overwritten.
+func LoadOrCreate(path string) (Config, bool, error) {
+	config, err := Load(path)
+	if err == nil {
+		return config, false, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return Config{}, false, err
+	}
+
+	config = Default()
+	encoded, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return Config{}, false, fmt.Errorf("encode default config: %w", err)
+	}
+	encoded = append(encoded, '\n')
+
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return Config{}, false, fmt.Errorf("create config directory %q: %w", directory, err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		loaded, loadErr := Load(path)
+		return loaded, false, loadErr
+	}
+	if err != nil {
+		return Config{}, false, fmt.Errorf("create config file %q: %w", path, err)
+	}
+	if _, err := file.Write(encoded); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return Config{}, false, fmt.Errorf("write config file %q: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return Config{}, false, fmt.Errorf("close config file %q: %w", path, err)
+	}
+	return config, true, nil
 }
 
 func Load(path string) (Config, error) {
