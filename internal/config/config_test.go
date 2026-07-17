@@ -19,9 +19,14 @@ func TestLoad(t *testing.T) {
 			"timeout_seconds": 30,
 			"max_output_tokens": 2048
         },
-        "agent": {
+		"agent": {
             "system_prompt": " be helpful ",
             "max_iterations": 4
+		},
+		"telegram": {
+			"bot_token": " token ",
+			"allowed_user_ids": [123, 456],
+			"poll_timeout_seconds": 20
         }
     }`)
 
@@ -34,6 +39,9 @@ func TestLoad(t *testing.T) {
 	}
 	if loaded.API.TimeoutSeconds != 30 || loaded.API.MaxOutputTokens != 2048 || loaded.Agent.SystemPrompt != "be helpful" || loaded.Agent.MaxIterations != 4 {
 		t.Fatalf("loaded config = %#v", loaded)
+	}
+	if loaded.Telegram.BotToken != "token" || loaded.Telegram.PollTimeoutSeconds != 20 || len(loaded.Telegram.AllowedUserIDs) != 2 {
+		t.Fatalf("Telegram config = %#v", loaded.Telegram)
 	}
 }
 
@@ -49,6 +57,7 @@ func TestLoadValidation(t *testing.T) {
 		{name: "negative timeout", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m","timeout_seconds":-1}}`, want: "timeout_seconds cannot be negative"},
 		{name: "negative max tokens", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m","max_output_tokens":-1}}`, want: "max_output_tokens cannot be negative"},
 		{name: "negative iterations", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"agent":{"max_iterations":-1}}`, want: "max_iterations cannot be negative"},
+		{name: "negative Telegram poll timeout", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"telegram":{"poll_timeout_seconds":-1}}`, want: "poll_timeout_seconds cannot be negative"},
 		{name: "unknown field", body: `{"api":{"model":"m","unknown":true}}`, want: "unknown field"},
 		{name: "invalid JSON", body: `{`, want: "decode config"},
 		{name: "multiple values", body: `{"api":{"model":"m"}} {}`, want: "multiple JSON values"},
@@ -116,6 +125,9 @@ func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
 	}
 	if fromDisk.Agent.SystemPrompt != config.DefaultSystemPrompt {
 		t.Fatalf("system prompt = %q", fromDisk.Agent.SystemPrompt)
+	}
+	if fromDisk.Telegram.BotToken != "your-telegram-bot-token" || fromDisk.Telegram.PollTimeoutSeconds != 30 {
+		t.Fatalf("Telegram config = %#v", fromDisk.Telegram)
 	}
 }
 

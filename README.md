@@ -13,6 +13,7 @@
 - `calculate` 加、减、乘、除工具
 - 工具调用循环与最大轮次保护
 - `/reset` 清空上下文，`/exit` 或 `/quit` 退出
+- Telegram 机器人聊天，每个聊天独立保存上下文
 
 ## 环境要求
 
@@ -186,11 +187,50 @@ Agent: 上下文已清空。
 
 模型可以在一次回答中调用多个工具；工具参数错误会作为结果反馈给模型，使其有机会自行修正。API 或协议错误不会污染已有会话历史。
 
+## Telegram 机器人
+
+先在 Telegram 中联系 [@BotFather](https://t.me/BotFather)，使用 `/newbot` 创建机器人并取得 Token。然后填写配置：
+
+```json
+{
+  "telegram": {
+    "bot_token": "123456789:your-telegram-bot-token",
+    "allowed_user_ids": [123456789],
+    "poll_timeout_seconds": 30
+  }
+}
+```
+
+启动机器人：
+
+```bash
+go run ./cmd/telegram
+```
+
+也可以指定配置文件：
+
+```bash
+go run ./cmd/telegram -config ./configs/local.json
+```
+
+Telegram 命令：
+
+- `/start`：开始聊天并清空当前上下文
+- `/reset`：清空当前聊天上下文
+- `/id`：显示当前用户 ID 和聊天 ID
+- `/help`：显示帮助
+
+每个 `chat_id` 对应一个独立 Agent，上下文不会在不同私聊或群组之间共享。`allowed_user_ids` 是允许使用机器人的 Telegram 用户 ID；空数组表示允许所有用户，会消耗你的模型 API 配额，不建议用于公开机器人。首次获取自己的 ID 时可以暂时使用空数组，向机器人发送 `/id` 后再把返回的 `user_id` 写入白名单并重启。
+
+机器人使用长轮询 `getUpdates`，因此同一个 Bot Token 不应同时运行多个实例，也不能同时配置 Telegram Webhook。Token 可以完全控制机器人，应保存在权限受限的本地配置中，不要提交到代码仓库。
+
 ## 架构
 
 ```text
 cmd/agent                 CLI 入口
+cmd/telegram              Telegram Bot 入口
 internal/agent            对话历史与工具调用循环
+internal/telegram         Telegram Bot API 与聊天会话调度
 internal/ai               统一消息类型、接口和调用客户端
 └── provider              提供商工厂与协议适配
     ├── common            共享 Chat Completions 协议
@@ -201,7 +241,7 @@ internal/ai               统一消息类型、接口和调用客户端
     └── openai_compatible 其他兼容服务适配
 ```
 
-Agent 仅依赖 `internal/ai` 的统一接口。提供商实现不会依赖 Agent，各厂商之间也没有相互依赖；新增提供商时实现 `ai.Backend` 并在工厂注册即可。
+Agent 仅依赖 `internal/ai` 的统一接口，提供商实现不会反向依赖 Agent。MiMo 的 Responses 适配按设计复用 OpenAI Responses 实现；新增独立提供商时实现 `ai.Backend` 并在工厂注册即可。
 
 ## 验证
 
@@ -209,4 +249,5 @@ Agent 仅依赖 `internal/ai` 的统一接口。提供商实现不会依赖 Agen
 go test ./...
 go vet ./...
 go build -o bin/roleloom-agent ./cmd/agent
+go build -o bin/roleloom-telegram ./cmd/telegram
 ```

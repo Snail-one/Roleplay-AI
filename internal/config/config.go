@@ -16,8 +16,9 @@ const (
 )
 
 type Config struct {
-	API   APIConfig   `json:"api"`
-	Agent AgentConfig `json:"agent"`
+	API      APIConfig      `json:"api"`
+	Agent    AgentConfig    `json:"agent"`
+	Telegram TelegramConfig `json:"telegram"`
 }
 
 type APIConfig struct {
@@ -34,6 +35,12 @@ type AgentConfig struct {
 	MaxIterations int    `json:"max_iterations"`
 }
 
+type TelegramConfig struct {
+	BotToken           string  `json:"bot_token"`
+	AllowedUserIDs     []int64 `json:"allowed_user_ids"`
+	PollTimeoutSeconds int     `json:"poll_timeout_seconds"`
+}
+
 func Default() Config {
 	return Config{
 		API: APIConfig{
@@ -47,6 +54,11 @@ func Default() Config {
 		Agent: AgentConfig{
 			SystemPrompt:  DefaultSystemPrompt,
 			MaxIterations: 8,
+		},
+		Telegram: TelegramConfig{
+			BotToken:           "your-telegram-bot-token",
+			AllowedUserIDs:     []int64{},
+			PollTimeoutSeconds: 30,
 		},
 	}
 }
@@ -126,6 +138,7 @@ func (c *Config) Validate() error {
 	c.API.APIKey = strings.TrimSpace(c.API.APIKey)
 	c.API.Model = strings.TrimSpace(c.API.Model)
 	c.Agent.SystemPrompt = strings.TrimSpace(c.Agent.SystemPrompt)
+	c.Telegram.BotToken = strings.TrimSpace(c.Telegram.BotToken)
 	if c.API.Provider == "" {
 		c.API.Provider = "openai"
 	}
@@ -152,6 +165,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Agent.MaxIterations < 0 {
 		return errors.New("agent.max_iterations cannot be negative")
+	}
+	if c.Telegram.PollTimeoutSeconds < 0 {
+		return errors.New("telegram.poll_timeout_seconds cannot be negative")
 	}
 	return nil
 }

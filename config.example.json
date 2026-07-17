@@ -10,5 +10,10 @@
   "agent": {
     "system_prompt": "你是一个简洁、可靠的 AI 助手。需要准确时间或数学计算时，应使用可用工具。",
     "max_iterations": 8
+  },
+  "telegram": {
+    "bot_token": "your-telegram-bot-token",
+    "allowed_user_ids": [],
+    "poll_timeout_seconds": 30
   }
 }
