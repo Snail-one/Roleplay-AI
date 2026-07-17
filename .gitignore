@@ -1,0 +1,6 @@
+/agent
+/bin/
+*.test
+*.out
+.env
+config.json
