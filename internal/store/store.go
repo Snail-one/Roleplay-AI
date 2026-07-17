@@ -125,6 +125,15 @@ func (s *Store) SyncAdminPassword(ctx context.Context, password string) (bool, e
 	return true, tx.Commit()
 }
 
+func (s *Store) AdminPasswordInitialized(ctx context.Context) (bool, error) {
+	var one int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM settings WHERE key='admin_password_hash'`).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (s *Store) VerifyAdminPassword(ctx context.Context, password string) (bool, error) {
 	var encoded string
 	err := s.db.QueryRowContext(ctx, `SELECT CAST(value AS TEXT) FROM settings WHERE key='admin_password_hash'`).Scan(&encoded)

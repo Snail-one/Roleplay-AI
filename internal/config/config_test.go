@@ -13,8 +13,8 @@ func TestLoadOrCreate(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("created=%v err=%v", created, err)
 	}
-	if c.Server.DatabasePath != "data/roleloom.db" {
-		t.Fatal(c.Server.DatabasePath)
+	if c.Server.DatabasePath != "data/roleloom.db" || c.Server.MasterKeyPath != "data/master.key" {
+		t.Fatalf("server config = %#v", c.Server)
 	}
 	info, _ := os.Stat(path)
 	if info.Mode().Perm() != 0o600 {

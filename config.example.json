@@ -2,6 +2,7 @@
   "server": {
     "address": "127.0.0.1:8080",
     "database_path": "data/roleloom.db",
+    "master_key_path": "data/master.key",
     "static_dir": "web/dist",
     "secure_cookie": false
   },

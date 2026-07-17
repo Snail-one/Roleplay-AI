@@ -1,6 +1,6 @@
 # RoleLoom
 
-RoleLoom 是一个个人自托管、单管理员、多角色的网页角色扮演应用。角色、会话、完整消息和滚动记忆保存在 SQLite；模型密钥使用环境变量主密钥加密后保存。第一版只提供 Go Web 服务，不包含 CLI、Telegram 或多用户注册。
+RoleLoom 是一个个人自托管、单管理员、多角色的网页角色扮演应用。角色、会话、完整消息和滚动记忆保存在 SQLite；模型密钥使用本地主密钥加密后保存。第一版只提供 Go Web 服务，不包含 CLI、Telegram 或多用户注册。
 
 ## 功能
 
@@ -32,6 +32,7 @@ cp config.example.json config.json
   "server": {
     "address": "127.0.0.1:8080",
     "database_path": "data/roleloom.db",
+    "master_key_path": "data/master.key",
     "static_dir": "web/dist",
     "secure_cookie": false
   },
@@ -39,12 +40,9 @@ cp config.example.json config.json
 }
 ```
 
-启动前必须设置管理员密码（至少 12 个字符）和 Base64 编码的 32 字节主密钥：
+构建网页并启动：
 
 ```bash
-export ROLELOOM_ADMIN_PASSWORD='replace-with-a-long-password'
-export ROLELOOM_MASTER_KEY="$(openssl rand -base64 32)"
-
 cd web
 npm ci
 npm run build
@@ -52,9 +50,11 @@ cd ..
 go run ./cmd/server
 ```
 
+首次启动时，终端会提示输入并确认管理员密码；输入过程不会显示字符。程序会把 Argon2id 密码哈希存入 SQLite，并自动生成权限为 `0600` 的 `data/master.key`。以后只需运行 `go run ./cmd/server`，无需再次输入密码或设置环境变量。
+
 打开 `http://127.0.0.1:8080`，登录后先创建一个模型档案和角色。模型 API URL 必须填写完整端点，例如 `/v1/chat/completions`、`/v1/responses` 或 `/v1/messages`。部署在 HTTPS 后面时应把 `secure_cookie` 设为 `true`，并让反向代理传递正确的 `Host` 和 `X-Forwarded-Proto`。
 
-管理员环境变量密码发生变化时，服务会更新数据库中的 Argon2id 哈希并撤销所有现有登录。主密钥错误时，只要数据库中已有加密密钥，服务会拒绝启动；不会尝试把密文当明文使用。
+容器或 systemd 等非交互部署仍可使用环境变量。设置 `ROLELOOM_ADMIN_PASSWORD` 会初始化或主动修改管理员密码，并撤销现有登录；设置 `ROLELOOM_MASTER_KEY` 会覆盖主密钥文件。主密钥错误或文件丢失时，只要数据库中已有加密密钥，服务就会拒绝启动。
 
 ## 开发
 
@@ -91,7 +91,7 @@ npm run build
 聊天正文按明文保存，只有模型 API Key 使用 AES-256-GCM 加密，每条记录都有独立随机 nonce。完整备份需要同时保存：
 
 - `database_path` 指向的 SQLite 数据库；在线复制时使用 SQLite 备份工具或先停服
-- `ROLELOOM_MASTER_KEY`
+- `master_key_path` 指向的主密钥文件（默认 `data/master.key`），或部署时使用的 `ROLELOOM_MASTER_KEY`
 - `config.json`
 
 丢失主密钥无法恢复数据库中的模型密钥。不要把数据库、配置、管理员密码或主密钥提交到版本库。

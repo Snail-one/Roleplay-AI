@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -22,6 +24,73 @@ func ParseMasterKey(value string) ([]byte, error) {
 		return nil, errors.New("ROLELOOM_MASTER_KEY must be Base64-encoded 32 bytes")
 	}
 	return b, nil
+}
+
+// LoadOrCreateMasterKey loads a Base64 master key from path. Creation is
+// refused when allowCreate is false so a missing backup can never silently
+// replace a key that protects existing encrypted data.
+func LoadOrCreateMasterKey(path string, allowCreate bool) ([]byte, bool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, false, errors.New("master key path is required")
+	}
+	key, err := loadMasterKeyFile(path)
+	if err == nil {
+		return key, false, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, false, err
+	}
+	if !allowCreate {
+		return nil, false, fmt.Errorf("master key file %q is missing; restore it from backup", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, false, fmt.Errorf("create master key directory: %w", err)
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, false, fmt.Errorf("generate master key: %w", err)
+	}
+	encoded := append([]byte(base64.StdEncoding.EncodeToString(raw)), '\n')
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		key, loadErr := loadMasterKeyFile(path)
+		return key, false, loadErr
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("create master key file: %w", err)
+	}
+	if _, err = file.Write(encoded); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return nil, false, fmt.Errorf("write master key file: %w", err)
+	}
+	if err = file.Close(); err != nil {
+		return nil, false, fmt.Errorf("close master key file: %w", err)
+	}
+	return raw, true, nil
+}
+
+func loadMasterKeyFile(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("master key path %q is not a regular file", path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("master key file %q permissions must be 0600 or stricter", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read master key file: %w", err)
+	}
+	key, err := ParseMasterKey(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("invalid master key file %q: %w", path, err)
+	}
+	return key, nil
 }
 
 func Encrypt(key, plaintext []byte) ([]byte, error) {

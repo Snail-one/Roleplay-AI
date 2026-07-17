@@ -18,10 +18,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Address      string `json:"address"`
-	DatabasePath string `json:"database_path"`
-	StaticDir    string `json:"static_dir"`
-	SecureCookie bool   `json:"secure_cookie"`
+	Address       string `json:"address"`
+	DatabasePath  string `json:"database_path"`
+	MasterKeyPath string `json:"master_key_path"`
+	StaticDir     string `json:"static_dir"`
+	SecureCookie  bool   `json:"secure_cookie"`
 }
 
 type LogConfig struct {
@@ -29,7 +30,7 @@ type LogConfig struct {
 }
 
 func Default() Config {
-	return Config{Server: ServerConfig{Address: "127.0.0.1:8080", DatabasePath: "data/roleloom.db", StaticDir: "web/dist"}, Log: LogConfig{Level: "info"}}
+	return Config{Server: ServerConfig{Address: "127.0.0.1:8080", DatabasePath: "data/roleloom.db", MasterKeyPath: "data/master.key", StaticDir: "web/dist"}, Log: LogConfig{Level: "info"}}
 }
 
 func LoadOrCreate(path string) (Config, bool, error) {
@@ -91,6 +92,7 @@ func Load(path string) (Config, error) {
 func (c *Config) Validate() error {
 	c.Server.Address = strings.TrimSpace(c.Server.Address)
 	c.Server.DatabasePath = strings.TrimSpace(c.Server.DatabasePath)
+	c.Server.MasterKeyPath = strings.TrimSpace(c.Server.MasterKeyPath)
 	c.Server.StaticDir = strings.TrimSpace(c.Server.StaticDir)
 	c.Log.Level = strings.ToLower(strings.TrimSpace(c.Log.Level))
 	if c.Server.Address == "" {
@@ -98,6 +100,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.DatabasePath == "" {
 		c.Server.DatabasePath = "data/roleloom.db"
+	}
+	if c.Server.MasterKeyPath == "" {
+		c.Server.MasterKeyPath = "data/master.key"
 	}
 	if c.Server.StaticDir == "" {
 		c.Server.StaticDir = "web/dist"
