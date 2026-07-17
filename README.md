@@ -6,7 +6,7 @@
 
 - 终端多轮对话
 - OpenAI Chat Completions 与 Responses API
-- 其他兼容服务的 Chat Completions 接口
+- 其他兼容服务的 Chat Completions 与 Responses 接口
 - Claude 原生 Anthropic Messages API
 - 小米 MiMo Chat Completions、Responses 和 Anthropic Messages API
 - `get_current_time` 时间工具（支持 IANA 时区）
@@ -46,7 +46,7 @@ go run ./cmd/agent
 }
 ```
 
-`api.provider` 支持 `openai`、`deepseek`、`claude`、`mimo` 和 `openai_compatible`；省略时默认为 `openai`，`anthropic` 会归一化为 `claude`。所有提供商都必须填写完整的 `api.api_url` 请求地址，程序不会自动追加 API 路径。`api.model` 必填，`api.api_key` 对本地免鉴权服务可以留空。`max_output_tokens` 为 `0` 时，Claude 默认使用 4096，Chat Completions 服务则不主动发送限制。超时和最大模型调用轮数设置为 `0` 时分别使用内置默认值 60 秒和 8 轮。
+`api.provider` 支持 `openai`、`deepseek`、`claude`、`mimo` 和 `openai_compatible`；省略时默认为 `openai`，`anthropic` 会归一化为 `claude`。专用提供商需要填写完整的 `api.api_url` 请求地址；`openai_compatible` 可以填写根地址或 API 前缀，程序会自动补全 `/chat/completions`，填写完整的 `/responses` 地址时则直接使用 Responses API。`api.model` 必填，`api.api_key` 对本地免鉴权服务可以留空。`max_output_tokens` 为 `0` 时，Claude 默认使用 4096，Chat Completions 服务则不主动发送限制。超时和最大模型调用轮数设置为 `0` 时分别使用内置默认值 60 秒和 8 轮。
 
 ### OpenAI
 
@@ -95,7 +95,14 @@ Claude 使用原生 Anthropic Messages API：
 
 ### 其他兼容服务
 
-通义千问、Moonshot、Ollama 或自建网关等提供 OpenAI Chat Completions 兼容接口时，可选择 `openai_compatible`，并在 `api_url` 中填写以 `/chat/completions` 结尾的完整请求地址。
+通义千问、Moonshot、Ollama 或自建网关等提供 OpenAI 兼容接口时，可选择 `openai_compatible`。地址选择规则：
+
+- 根地址或 API 前缀默认补全 `/chat/completions`，例如 `https://api.deepseek.com` 会变成 `https://api.deepseek.com/chat/completions`。
+- 已经以 `/chat/completions` 结尾时保持原样。
+- 以 `/responses` 结尾时保持原样并使用 Responses API。
+- 以 `/messages` 结尾时明确报错。
+
+通用 Responses 默认使用 OpenAI 兼容的 `Authorization: Bearer` 认证。MiMo Responses 使用 `api-key` 认证，因此调用 `https://api.xiaomimimo.com/v1/responses` 时应选择 `provider: "mimo"`。
 
 ### 小米 MiMo
 
