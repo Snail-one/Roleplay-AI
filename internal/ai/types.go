@@ -48,5 +48,18 @@ type Backend interface {
 	Complete(ctx context.Context, messages []Message, tools []ToolDefinition) (Message, error)
 }
 
+type StreamEvent struct {
+	Delta    string
+	ToolName string
+}
+
+type EventSink func(StreamEvent) error
+
+// StreamingBackend is implemented by providers with a native streaming protocol.
+type StreamingBackend interface {
+	Backend
+	Stream(ctx context.Context, messages []Message, tools []ToolDefinition, sink EventSink) (Message, error)
+}
+
 // ChatClient is the provider-neutral interface consumed by the Agent.
 type ChatClient = Backend

@@ -1,268 +1,72 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { ApiError, chat, checkHealth, resetSession } from './api'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { ApiError, api, streamEvents, type Character, type Conversation, type Message, type ModelProfile } from './api'
 
-type Role = 'user' | 'assistant'
+type View = 'chat'|'characters'|'models'
+const emptyModel = {name:'',provider:'openai_compatible',api_url:'',api_key:'',model:'',timeout_seconds:60,max_output_tokens:4096,context_window:32768,is_default:false}
+const emptyCharacter = {name:'',bio:'',personality:'',scenario:'',greeting:'',system_rules:'',example_dialogue:'',enable_time:false,enable_calculator:false,default_model_profile_id:''}
+type ModelForm = typeof emptyModel & {id?:string;clear_api_key?:boolean}
+type CharacterForm = typeof emptyCharacter & {id?:string}
+const messageOf = (error:unknown) => error instanceof ApiError ? error.message : error instanceof Error ? error.message : '操作失败'
 
-interface Message {
-  id: string
-  role: Role
-  content: string
+function Login({onLogin}:{onLogin:()=>void}) {
+  const [password,setPassword]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+  async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{await api.login(password);onLogin()}catch(err){setError(messageOf(err))}finally{setBusy(false)}}
+  return <main className="login-page"><form className="login-card" onSubmit={submit}><div className="logo">RL</div><p className="eyebrow">PERSONAL ROLEPLAY STUDIO</p><h1>欢迎回到 RoleLoom</h1><p className="muted">使用服务器管理员密码继续。你的角色、对话和模型密钥都留在自托管实例中。</p><label>管理员密码<input type="password" autoFocus autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} minLength={12}/></label>{error&&<p className="error">{error}</p>}<button className="primary" disabled={busy||password.length<12}>{busy?'正在登录…':'登录'}</button></form></main>
 }
 
-type ConnectionState = 'checking' | 'online' | 'offline'
-
-const messagesStorageKey = 'roleloom.messages'
-const sessionStorageKey = 'roleloom.session-id'
-
-const suggestions = [
-  '帮我规划今天最重要的三件事',
-  '解释一个我最近没弄懂的概念',
-  '计算 (128 + 72) ÷ 5',
-]
-
-function loadMessages(): Message[] {
-  try {
-    const value = localStorage.getItem(messagesStorageKey)
-    if (!value) return []
-    const parsed = JSON.parse(value) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (item): item is Message =>
-        typeof item === 'object' &&
-        item !== null &&
-        'id' in item &&
-        'role' in item &&
-        'content' in item &&
-        typeof item.id === 'string' &&
-        (item.role === 'user' || item.role === 'assistant') &&
-        typeof item.content === 'string',
-    ).slice(-100)
-  } catch {
-    return []
-  }
+function App(){
+  const [auth,setAuth]=useState<'loading'|'yes'|'no'>('loading'),[view,setView]=useState<View>('chat'),[models,setModels]=useState<ModelProfile[]>([]),[characters,setCharacters]=useState<Character[]>([]),[conversations,setConversations]=useState<Conversation[]>([]),[activeID,setActiveID]=useState(''),[error,setError]=useState('')
+  async function load(){try{const [m,c,v]=await Promise.all([api.models(),api.characters(),api.conversations()]);setModels(m);setCharacters(c);setConversations(v);setActiveID(id=>id||v[0]?.id||'')}catch(e){if(e instanceof ApiError&&e.status===401)setAuth('no');else setError(messageOf(e))}}
+  useEffect(()=>{void api.session().then(()=>{setAuth('yes');return load()}).catch(()=>setAuth('no'))},[])
+  if(auth==='loading')return <main className="loading">正在打开 RoleLoom…</main>
+  if(auth==='no')return <Login onLogin={()=>{setAuth('yes');void load()}}/>
+  async function logout(){await api.logout();setAuth('no')}
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="logo small">RL</span><div><strong>RoleLoom</strong><small>角色叙事工作台</small></div></div><nav><button className={view==='chat'?'active':''} onClick={()=>setView('chat')}>对话</button><button className={view==='characters'?'active':''} onClick={()=>setView('characters')}>角色</button><button className={view==='models'?'active':''} onClick={()=>setView('models')}>模型档案</button></nav><div className="sidebar-foot"><span>仅限本机管理员</span><button className="link" onClick={()=>void logout()}>退出登录</button></div></aside><section className="workspace">{error&&<div className="global-error">{error}<button onClick={()=>setError('')}>×</button></div>}{view==='chat'&&<ChatView characters={characters} models={models} conversations={conversations} setConversations={setConversations} activeID={activeID} setActiveID={setActiveID} onError={setError}/>} {view==='characters'&&<CharactersView items={characters} models={models} onChange={async()=>{setCharacters(await api.characters());setConversations(await api.conversations())}} onError={setError}/>} {view==='models'&&<ModelsView items={models} onChange={async()=>setModels(await api.models())} onError={setError}/>}</section></div>
 }
 
-function createID(): string {
-  return typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+function ModelsView({items,onChange,onError}:{items:ModelProfile[];onChange:()=>Promise<void>;onError:(v:string)=>void}){
+  const [form,setForm]=useState<ModelForm>(emptyModel),[busy,setBusy]=useState(false),[notice,setNotice]=useState('')
+  function edit(p:ModelProfile){setForm({...p,api_key:''});setNotice('')}
+  async function save(e:FormEvent){e.preventDefault();setBusy(true);try{await api.saveModel(form);setForm(emptyModel);await onChange()}catch(err){onError(messageOf(err))}finally{setBusy(false)}}
+  async function remove(id:string){if(!confirm('删除这个模型档案？被会话引用时将无法删除。'))return;try{await api.deleteModel(id);if(form.id===id)setForm(emptyModel);await onChange()}catch(e){onError(messageOf(e))}}
+  async function test(id:string){setNotice('正在测试连接…');try{const result=await api.testModel(id);setNotice(result.message)}catch(e){setNotice(messageOf(e))}}
+  return <div className="page"><PageTitle title="模型档案" subtitle="密钥只会加密保存于数据库，页面永远不会回显。"/><div className="split"><div className="card-list">{items.length===0&&<Empty text="还没有模型档案。先在右侧创建一个。"/>}{items.map(p=><article className="item-card" key={p.id}><div><h3>{p.name}{p.is_default&&<span className="badge">默认</span>}</h3><p>{p.provider} · {p.model}</p><small>{p.api_url} · 密钥{p.has_api_key?'已保存':'未设置'}</small></div><div className="actions"><button onClick={()=>void test(p.id)}>测试</button><button onClick={()=>edit(p)}>编辑</button><button className="danger" onClick={()=>void remove(p.id)}>删除</button></div></article>)}</div><form className="editor" onSubmit={save}><h2>{form.id?'编辑档案':'新建档案'}</h2><div className="form-grid"><Field label="名称" value={form.name} set={v=>setForm({...form,name:v})}/><label>Provider<select value={String(form.provider)} onChange={e=>setForm({...form,provider:e.target.value})}>{['openai','openai_compatible','deepseek','claude','mimo'].map(x=><option key={x}>{x}</option>)}</select></label><Field wide label="完整 API URL" value={form.api_url} set={v=>setForm({...form,api_url:v})} placeholder="https://…/v1/chat/completions"/><Field label="模型" value={form.model} set={v=>setForm({...form,model:v})}/><Field label={form.id?'新 API Key（留空则保留）':'API Key（可留空）'} type="password" value={form.api_key} set={v=>setForm({...form,api_key:v})}/><NumberField label="超时（秒）" value={form.timeout_seconds} set={v=>setForm({...form,timeout_seconds:v})}/><NumberField label="最大输出" value={form.max_output_tokens} set={v=>setForm({...form,max_output_tokens:v})}/><NumberField label="上下文窗口" value={form.context_window} set={v=>setForm({...form,context_window:v})}/><label className="check"><input type="checkbox" checked={Boolean(form.is_default)} onChange={e=>setForm({...form,is_default:e.target.checked})}/>设为全局默认</label>{form.id&&<label className="check"><input type="checkbox" checked={Boolean(form.clear_api_key)} onChange={e=>setForm({...form,clear_api_key:e.target.checked})}/>清除已保存密钥</label>}</div>{notice&&<p className="notice">{notice}</p>}<div className="editor-actions">{form.id&&<button type="button" onClick={()=>setForm(emptyModel)}>取消</button>}<button className="primary" disabled={busy}>{busy?'保存中…':'保存档案'}</button></div></form></div></div>
 }
 
-function BrandMark({ small = false }: { small?: boolean }) {
-  return (
-    <span className={small ? 'brand-mark brand-mark--small' : 'brand-mark'} aria-hidden="true">
-      <svg viewBox="0 0 32 32" role="img">
-        <path d="M9 8.5h9.2c3.5 0 5.8 2 5.8 5 0 2.5-1.2 4.2-3.3 4.9L25 24h-5.2l-3.6-5H14v5H9V8.5Zm5 4v3h3.6c1 0 1.6-.5 1.6-1.5s-.6-1.5-1.6-1.5H14Z" />
-      </svg>
-    </span>
-  )
+function CharactersView({items,models,onChange,onError}:{items:Character[];models:ModelProfile[];onChange:()=>Promise<void>;onError:(v:string)=>void}){
+  const [form,setForm]=useState<CharacterForm>(emptyCharacter),[busy,setBusy]=useState(false)
+  async function save(e:FormEvent){e.preventDefault();setBusy(true);try{await api.saveCharacter(form);setForm(emptyCharacter);await onChange()}catch(err){onError(messageOf(err))}finally{setBusy(false)}}
+  async function remove(id:string){if(!confirm('删除角色会同时删除其全部会话，确认继续？'))return;try{await api.deleteCharacter(id);setForm(emptyCharacter);await onChange()}catch(e){onError(messageOf(e))}}
+  async function avatar(file:File){if(!form.id)return;if(file.size>2*1024*1024){onError('头像不能超过 2 MiB');return}try{await api.uploadAvatar(form.id,file);await onChange()}catch(e){onError(messageOf(e))}}
+  async function clearAvatar(){if(!form.id)return;try{await api.deleteAvatar(form.id);await onChange()}catch(e){onError(messageOf(e))}}
+  return <div className="page"><PageTitle title="角色" subtitle="新会话会复制完整角色设定；编辑不会改变已有会话。"/><div className="split"><div className="card-list">{items.length===0&&<Empty text="创建你的第一个角色。"/>}{items.map(c=><article className="item-card" key={c.id}><div className="character-row"><Avatar character={c}/><div><h3>{c.name}</h3><p>{c.bio||'尚未填写简介'}</p><small>{[c.enable_time&&'时间',c.enable_calculator&&'计算器'].filter(Boolean).join(' · ')||'工具关闭'}</small></div></div><div className="actions"><button onClick={()=>setForm({...c,default_model_profile_id:c.default_model_profile_id||''})}>编辑</button><button className="danger" onClick={()=>void remove(c.id)}>删除</button></div></article>)}</div><form className="editor" onSubmit={save}><h2>{form.id?'编辑角色':'新建角色'}</h2>{form.id&&<div className="avatar-editor"><label>更换头像<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)void avatar(file)}}/></label><button type="button" onClick={()=>void clearAvatar()}>移除头像</button></div>}<div className="form-grid"><Field label="名字" value={form.name} set={v=>setForm({...form,name:v})}/><label>默认模型<select value={String(form.default_model_profile_id||'')} onChange={e=>setForm({...form,default_model_profile_id:e.target.value})}><option value="">使用全局默认</option>{models.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}</select></label><Area label="简介" value={form.bio} set={v=>setForm({...form,bio:v})}/><Area label="性格" value={form.personality} set={v=>setForm({...form,personality:v})}/><Area label="场景" value={form.scenario} set={v=>setForm({...form,scenario:v})}/><Area label="开场白" value={form.greeting} set={v=>setForm({...form,greeting:v})}/><Area label="系统规则" value={form.system_rules} set={v=>setForm({...form,system_rules:v})}/><Area label="示例对话" value={form.example_dialogue} set={v=>setForm({...form,example_dialogue:v})}/><label className="check"><input type="checkbox" checked={Boolean(form.enable_time)} onChange={e=>setForm({...form,enable_time:e.target.checked})}/>启用时间工具</label><label className="check"><input type="checkbox" checked={Boolean(form.enable_calculator)} onChange={e=>setForm({...form,enable_calculator:e.target.checked})}/>启用计算器</label></div><div className="editor-actions">{form.id&&<button type="button" onClick={()=>setForm(emptyCharacter)}>取消</button>}<button className="primary" disabled={busy}>{busy?'保存中…':'保存角色'}</button></div></form></div></div>
 }
 
-function SendIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="m5 12 14-7-4.8 14-2.7-5.5L5 12Z" />
-      <path d="m11.5 13.5 3-3" />
-    </svg>
-  )
+function ChatView({characters,models,conversations,setConversations,activeID,setActiveID,onError}:{characters:Character[];models:ModelProfile[];conversations:Conversation[];setConversations:(v:Conversation[])=>void;activeID:string;setActiveID:(v:string)=>void;onError:(v:string)=>void}){
+  const [messages,setMessages]=useState<Message[]>([]),[input,setInput]=useState(''),[generating,setGenerating]=useState(false),[warning,setWarning]=useState(''),[newCharacter,setNewCharacter]=useState('')
+  const abort=useRef<AbortController|null>(null),end=useRef<HTMLDivElement>(null),active=conversations.find(c=>c.id===activeID)
+  useEffect(()=>{if(!activeID){setMessages([]);return}void api.messages(activeID).then(setMessages).catch(e=>onError(messageOf(e)))},[activeID])
+  useEffect(()=>end.current?.scrollIntoView({behavior:'smooth'}),[messages])
+  const latestUser=useMemo(()=>[...messages].reverse().find(m=>m.role==='user'),[messages])
+  async function create(){if(!newCharacter)return;try{const c=await api.createConversation(newCharacter);setConversations([c,...conversations]);setActiveID(c.id);setNewCharacter('')}catch(e){onError(messageOf(e))}}
+  function consume(type:string,data:unknown){const value=data as Message&{delta?:string;message?:string};if(type==='user_message')setMessages(m=>m.some(x=>x.id===value.id)?m:[...m,value]);if(type==='assistant_start')setMessages(m=>[...m.filter(x=>x.id!==value.id),value]);if(type==='assistant_delta')setMessages(m=>m.map((x,i)=>i===m.length-1&&x.role==='assistant'?{...x,content:x.content+(value.delta||'')}:x));if(type==='assistant_done')setMessages(m=>m.map(x=>x.id===value.id?value:x));if(type==='warning')setWarning(value.message||'上下文已降级');if(type==='error')onError(value.message||'生成失败')}
+  async function run(path:string,body:unknown){setGenerating(true);setWarning('');const controller=new AbortController();abort.current=controller;try{await streamEvents(path,body,consume,controller.signal)}catch(e){if((e as Error).name!=='AbortError')onError(messageOf(e))}finally{await new Promise(resolve=>setTimeout(resolve,50));try{setMessages(await api.messages(activeID))}catch{/* The global session handler will surface a later refresh failure. */}setGenerating(false);abort.current=null}}
+  async function send(e:FormEvent){e.preventDefault();const content=input.trim();if(!active||!content||generating)return;setInput('');await run(`/api/conversations/${active.id}/messages/stream`,{client_message_id:crypto.randomUUID(),content})}
+  async function stop(){if(!active)return;abort.current?.abort();try{await api.stop(active.id)}catch(e){onError(messageOf(e))}}
+  async function edit(){if(!active||!latestUser)return;const content=prompt('编辑消息',latestUser.content)?.trim();if(!content)return;try{await api.editMessage(active.id,latestUser.id,content);setMessages(await api.messages(active.id))}catch(e){onError(messageOf(e))}}
+  async function removeMessage(m:Message){if(!active||!confirm('删除这条消息及之后的内容？'))return;try{await api.deleteMessage(active.id,m.id);setMessages(await api.messages(active.id))}catch(e){onError(messageOf(e))}}
+  async function removeConversation(id:string){if(!confirm('删除整个会话？'))return;try{await api.deleteConversation(id);const next=conversations.filter(c=>c.id!==id);setConversations(next);setActiveID(next[0]?.id||'')}catch(e){onError(messageOf(e))}}
+  return <div className="chat-layout">
+    <aside className="conversation-panel"><div className="new-conversation"><select value={newCharacter} onChange={e=>setNewCharacter(e.target.value)}><option value="">选择角色…</option>{characters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><button className="primary" disabled={!newCharacter||models.length===0} onClick={()=>void create()}>新对话</button></div>{models.length===0&&<p className="panel-hint">请先创建默认模型档案。</p>}{conversations.map(c=><button key={c.id} className={`conversation ${c.id===activeID?'active':''}`} onClick={()=>setActiveID(c.id)}><span>{c.title}</span><small>{c.character_snapshot.name}</small></button>)}</aside>
+    <main className="chat-main">{!active?<Empty text={characters.length?'选择角色创建新会话。':'先在“角色”页创建一个角色。'}/>:<><header className="chat-head"><div><h2>{active.title}</h2><p>角色快照：{active.character_snapshot.name}</p></div><button className="danger" onClick={()=>void removeConversation(active.id)}>删除会话</button></header><section className="message-list">{messages.map(m=><article key={m.id} className={`bubble ${m.role}`}><div className="bubble-meta"><span>{m.role==='user'?'你':active.character_snapshot.name}</span><small>{m.status!=='completed'?m.status:''}</small></div><p>{m.content}</p>{m.status==='generating'&&!m.content&&<span className="typing">•••</span>}<div className="bubble-actions">{m.role==='user'&&m.id===latestUser?.id&&!generating&&<button onClick={()=>void edit()}>编辑</button>}{!generating&&<button onClick={()=>void removeMessage(m)}>删除至此</button>}</div></article>)}<div ref={end}/></section>{warning&&<p className="warning">{warning}</p>}<form className="composer" onSubmit={send}><textarea value={input} onChange={e=>setInput(e.target.value)} placeholder={`以你的身份对 ${active.character_snapshot.name} 说…`} maxLength={32000} disabled={generating}/>{generating?<button type="button" className="stop" onClick={()=>void stop()}>停止</button>:<button className="primary" disabled={!input.trim()}>发送</button>}</form><div className="chat-tools"><button disabled={generating||!latestUser} onClick={()=>void run(`/api/conversations/${active.id}/regenerate`,{})}>重新生成最后回复</button></div></>}</main>
+  </div>
 }
 
-function ResetIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4.8 9A8 8 0 1 1 4 14" />
-      <path d="M4.8 4v5h5" />
-    </svg>
-  )
-}
-
-function App() {
-  const [messages, setMessages] = useState<Message[]>(loadMessages)
-  const [sessionID, setSessionID] = useState<string | null>(() => localStorage.getItem(sessionStorageKey))
-  const [input, setInput] = useState('')
-  const [isSending, setIsSending] = useState(false)
-  const [isResetting, setIsResetting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [connection, setConnection] = useState<ConnectionState>('checking')
-  const endRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    localStorage.setItem(messagesStorageKey, JSON.stringify(messages.slice(-100)))
-    endRef.current?.scrollIntoView({ behavior: messages.length > 1 ? 'smooth' : 'auto' })
-  }, [messages, isSending])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void checkHealth(controller.signal).then((healthy) => setConnection(healthy ? 'online' : 'offline'))
-    return () => controller.abort()
-  }, [])
-
-  useEffect(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    textarea.style.height = '0px'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
-  }, [input])
-
-  async function sendMessage(value = input) {
-    const content = value.trim()
-    if (!content || isSending) return
-
-    const userMessage: Message = { id: createID(), role: 'user', content }
-    setMessages((current) => [...current, userMessage])
-    setInput('')
-    setError(null)
-    setIsSending(true)
-    try {
-      const response = await chat(content, sessionID)
-      setSessionID(response.session_id)
-      localStorage.setItem(sessionStorageKey, response.session_id)
-      setMessages((current) => [
-        ...current,
-        { id: createID(), role: 'assistant', content: response.answer },
-      ])
-      setConnection('online')
-    } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : '无法连接到后端服务')
-      setConnection('offline')
-    } finally {
-      setIsSending(false)
-      requestAnimationFrame(() => textareaRef.current?.focus())
-    }
-  }
-
-  async function startNewConversation() {
-    if (isSending || isResetting) return
-    setIsResetting(true)
-    setError(null)
-    try {
-      await resetSession(sessionID)
-      setMessages([])
-      setSessionID(null)
-      localStorage.removeItem(sessionStorageKey)
-      localStorage.removeItem(messagesStorageKey)
-    } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : '无法清空当前会话')
-    } finally {
-      setIsResetting(false)
-    }
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault()
-      void sendMessage()
-    }
-  }
-
-  const isEmpty = messages.length === 0
-  const canSend = input.trim().length > 0 && !isSending
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="topbar__inner">
-          <a className="brand" href="/" aria-label="RoleLoom 首页">
-            <BrandMark small />
-            <span>RoleLoom</span>
-          </a>
-          <div className="topbar__actions">
-            <span className={`connection connection--${connection}`} title="后端连接状态">
-              <span className="connection__dot" />
-              {connection === 'online' ? '已连接' : connection === 'offline' ? '未连接' : '检查中'}
-            </span>
-            <button
-              className="reset-button"
-              type="button"
-              onClick={() => void startNewConversation()}
-              disabled={isResetting || isSending}
-              aria-label="开始新对话"
-            >
-              <ResetIcon />
-              <span>新对话</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className={`chat ${isEmpty ? 'chat--empty' : ''}`}>
-        {isEmpty ? (
-          <section className="welcome" aria-labelledby="welcome-title">
-            <BrandMark />
-            <p className="welcome__eyebrow">AI ASSISTANT</p>
-            <h1 id="welcome-title">今天想聊点什么？</h1>
-            <p className="welcome__description">提问、梳理想法，或让 Agent 使用工具完成简单任务。</p>
-            <div className="suggestions" aria-label="建议问题">
-              {suggestions.map((suggestion) => (
-                <button key={suggestion} type="button" onClick={() => void sendMessage(suggestion)}>
-                  {suggestion}
-                  <span aria-hidden="true">↗</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="messages" aria-live="polite" aria-label="聊天记录">
-            {messages.map((message) => (
-              <article key={message.id} className={`message message--${message.role}`}>
-                {message.role === 'assistant' && <BrandMark small />}
-                <div className="message__body">
-                  <span className="message__label">{message.role === 'user' ? '你' : 'RoleLoom'}</span>
-                  <p>{message.content}</p>
-                </div>
-              </article>
-            ))}
-            {isSending && (
-              <article className="message message--assistant" aria-label="AI 正在回复">
-                <BrandMark small />
-                <div className="typing" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </article>
-            )}
-            <div ref={endRef} />
-          </section>
-        )}
-      </main>
-
-      <footer className="composer-area">
-        <div className="composer-wrap">
-          {error && (
-            <div className="error-banner" role="alert">
-              <span>{error}</span>
-              <button type="button" onClick={() => setError(null)} aria-label="关闭错误提示">×</button>
-            </div>
-          )}
-          <div className="composer">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="给 RoleLoom 发送消息…"
-              rows={1}
-              maxLength={32000}
-              disabled={isSending}
-              aria-label="消息"
-            />
-            <button
-              className="send-button"
-              type="button"
-              onClick={() => void sendMessage()}
-              disabled={!canSend}
-              aria-label="发送消息"
-            >
-              <SendIcon />
-            </button>
-          </div>
-          <p className="composer-hint">Enter 发送 · Shift + Enter 换行 · AI 可能会犯错，请核对重要信息</p>
-        </div>
-      </footer>
-    </div>
-  )
-}
+function PageTitle({title,subtitle}:{title:string;subtitle:string}){return <header className="page-title"><h1>{title}</h1><p>{subtitle}</p></header>}
+function Empty({text}:{text:string}){return <div className="empty"><span>✦</span><p>{text}</p></div>}
+function Avatar({character}:{character:Character}){return character.has_avatar?<img className="avatar" src={`/api/characters/${character.id}/avatar`}/>:<span className="avatar fallback">{character.name.slice(0,1)}</span>}
+function Field({label,value,set,type='text',placeholder='',wide=false}:{label:string;value:unknown;set:(v:string)=>void;type?:string;placeholder?:string;wide?:boolean}){return <label className={wide?'wide':''}>{label}<input type={type} value={String(value||'')} placeholder={placeholder} onChange={e=>set(e.target.value)} required={label==='名称'||label==='名字'||label==='模型'||label.includes('URL')}/></label>}
+function NumberField({label,value,set}:{label:string;value:unknown;set:(v:number)=>void}){return <label>{label}<input type="number" min="1" value={Number(value)} onChange={e=>set(Number(e.target.value))}/></label>}
+function Area({label,value,set}:{label:string;value:unknown;set:(v:string)=>void}){return <label className="wide">{label}<textarea value={String(value||'')} onChange={e=>set(e.target.value)}/></label>}
 
 export default App

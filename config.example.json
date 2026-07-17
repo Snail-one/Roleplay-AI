@@ -1,27 +1,11 @@
 {
-  "api": {
-    "provider": "openai_compatible",
-    "api_url": "https://your-api-host/v1/chat/completions",
-    "api_key": "your-api-key",
-    "model": "your-model",
-    "timeout_seconds": 60,
-    "max_output_tokens": 4096
-  },
-  "agent": {
-    "system_prompt": "你是一个简洁、可靠的 AI 助手。需要准确时间或数学计算时，应使用可用工具。",
-    "max_iterations": 8
-  },
-  "telegram": {
-    "bot_token": "your-telegram-bot-token",
-    "allowed_user_ids": [],
-    "poll_timeout_seconds": 30
-  },
   "server": {
     "address": "127.0.0.1:8080",
+    "database_path": "data/roleloom.db",
     "static_dir": "web/dist",
-    "allowed_origins": [
-      "http://localhost:5173"
-    ],
-    "session_ttl_minutes": 120
+    "secure_cookie": false
+  },
+  "log": {
+    "level": "info"
   }
 }

@@ -13,119 +13,100 @@ import (
 	"syscall"
 	"time"
 
-	"roleloom/internal/agent"
-	"roleloom/internal/ai/provider"
 	"roleloom/internal/config"
 	"roleloom/internal/httpapi"
+	"roleloom/internal/security"
+	"roleloom/internal/store"
 )
 
 func main() {
-	configPath := flag.String("config", "config.json", "本地 JSON 配置文件路径")
-	address := flag.String("address", "", "HTTP 监听地址，覆盖配置文件")
-	staticDirectory := flag.String("static", "", "前端静态文件目录，覆盖配置文件")
+	configPath := flag.String("config", "config.json", "配置文件路径")
+	address := flag.String("address", "", "覆盖监听地址")
+	staticDir := flag.String("static", "", "覆盖前端静态目录")
 	flag.Parse()
-	if err := run(*configPath, *address, *staticDirectory); err != nil {
+	if err := run(*configPath, *address, *staticDir); err != nil {
 		fmt.Fprintln(os.Stderr, "错误:", err)
 		os.Exit(1)
 	}
 }
-
 func run(configPath, addressOverride, staticOverride string) error {
-	appConfig, created, err := config.LoadOrCreate(configPath)
+	cfg, created, err := config.LoadOrCreate(configPath)
 	if err != nil {
 		return err
 	}
 	if created {
-		fmt.Printf("已生成默认配置文件：%s\n", configPath)
-		fmt.Println("请填写 api 配置后重新启动。")
-		return nil
+		log.Printf("已生成配置文件 %s", configPath)
 	}
-
-	modelClient, err := provider.New(provider.Config{
-		Provider:  appConfig.API.Provider,
-		APIURL:    appConfig.API.APIURL,
-		APIKey:    appConfig.API.APIKey,
-		Model:     appConfig.API.Model,
-		MaxTokens: appConfig.API.MaxOutputTokens,
-		Timeout:   time.Duration(appConfig.API.TimeoutSeconds) * time.Second,
-	})
+	password := os.Getenv("ROLELOOM_ADMIN_PASSWORD")
+	if len([]rune(password)) < 12 {
+		return errors.New("ROLELOOM_ADMIN_PASSWORD 必须至少包含 12 个字符")
+	}
+	masterKey, err := security.ParseMasterKey(os.Getenv("ROLELOOM_MASTER_KEY"))
 	if err != nil {
-		return fmt.Errorf("创建模型客户端: %w", err)
+		return err
 	}
-	systemPrompt := strings.TrimSpace(appConfig.Agent.SystemPrompt)
-	if systemPrompt == "" {
-		systemPrompt = config.DefaultSystemPrompt
-	}
-	agentFactory := func() (httpapi.ChatAgent, error) {
-		return agent.New(modelClient, []agent.Tool{
-			agent.TimeTool{},
-			agent.CalculatorTool{},
-		}, agent.Options{
-			SystemPrompt:  systemPrompt,
-			MaxIterations: appConfig.Agent.MaxIterations,
-		})
-	}
-	apiServer, err := httpapi.New(agentFactory, httpapi.Options{
-		SessionTTL:     time.Duration(appConfig.Server.SessionTTLMinutes) * time.Minute,
-		AllowedOrigins: appConfig.Server.AllowedOrigins,
-		Logf:           log.Printf,
-	})
+	st, err := store.Open(cfg.Server.DatabasePath)
 	if err != nil {
-		return fmt.Errorf("创建 HTTP API: %w", err)
+		return fmt.Errorf("打开数据库: %w", err)
 	}
-
-	staticDirectory := strings.TrimSpace(staticOverride)
-	if staticDirectory == "" {
-		staticDirectory = appConfig.Server.StaticDir
+	defer st.Close()
+	changed, err := st.SyncAdminPassword(context.Background(), password)
+	if err != nil {
+		return fmt.Errorf("初始化管理员密码: %w", err)
+	}
+	if changed {
+		log.Printf("管理员密码已初始化或更新，已有登录会话已撤销")
+	}
+	profiles, err := st.ListModelProfiles(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, p := range profiles {
+		if p.HasAPIKey {
+			if _, err := security.Decrypt(masterKey, p.APIKeyEncrypted); err != nil {
+				return fmt.Errorf("主密钥无法解密模型档案 %q: %w", p.Name, err)
+			}
+		}
+	}
+	api, err := httpapi.New(httpapi.Options{Store: st, MasterKey: masterKey, CookieSecure: cfg.Server.SecureCookie, Logf: log.Printf})
+	if err != nil {
+		return err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/api/", apiServer.Handler())
-	spaHandler, staticErr := httpapi.NewSPAHandler(staticDirectory)
-	if staticErr == nil {
-		mux.Handle("/", spaHandler)
-		log.Printf("提供前端静态文件：%s", staticDirectory)
-	} else if errors.Is(staticErr, os.ErrNotExist) {
-		mux.HandleFunc("/", func(response http.ResponseWriter, _ *http.Request) {
-			response.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			response.WriteHeader(http.StatusNotFound)
-			_, _ = response.Write([]byte("前端尚未构建，请在 web 目录运行 npm install && npm run build，或使用 Vite 开发服务器。\n"))
-		})
-		log.Printf("前端目录 %s 尚未构建，仅启动 API", staticDirectory)
-	} else {
-		return fmt.Errorf("加载前端静态文件: %w", staticErr)
+	mux.Handle("/api/", api.Handler())
+	staticDir := strings.TrimSpace(staticOverride)
+	if staticDir == "" {
+		staticDir = cfg.Server.StaticDir
 	}
-
+	spa, staticErr := httpapi.NewSPAHandler(staticDir)
+	if staticErr == nil {
+		mux.Handle("/", spa)
+	} else if errors.Is(staticErr, os.ErrNotExist) {
+		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "前端尚未构建，请在 web 目录运行 npm run build。", 404)
+		})
+		log.Printf("前端目录 %s 不存在，仅启动 API", staticDir)
+	} else {
+		return staticErr
+	}
 	address := strings.TrimSpace(addressOverride)
 	if address == "" {
-		address = appConfig.Server.Address
+		address = cfg.Server.Address
 	}
-	httpServer := &http.Server{
-		Addr:              address,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       20 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-	}
+	server := &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	serverErrors := make(chan error, 1)
-	go func() {
-		log.Printf("RoleLoom Web 服务已启动：http://%s（提供商：%s，模型：%s）", address, appConfig.API.Provider, appConfig.API.Model)
-		serverErrors <- httpServer.ListenAndServe()
-	}()
-
+	errs := make(chan error, 1)
+	go func() { log.Printf("RoleLoom 已启动：http://%s", address); errs <- server.ListenAndServe() }()
 	select {
-	case err := <-serverErrors:
+	case err := <-errs:
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := httpServer.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("关闭 HTTP 服务: %w", err)
-		}
-		return nil
+		return server.Shutdown(shutdown)
 	}
 }
