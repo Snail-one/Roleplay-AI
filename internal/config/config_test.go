@@ -27,6 +27,12 @@ func TestLoad(t *testing.T) {
 			"bot_token": " token ",
 			"allowed_user_ids": [123, 456],
 			"poll_timeout_seconds": 20
+		},
+		"server": {
+			"address": " 127.0.0.1:9000 ",
+			"static_dir": " web/dist ",
+			"allowed_origins": ["http://localhost:5173/"],
+			"session_ttl_minutes": 60
         }
     }`)
 
@@ -43,6 +49,9 @@ func TestLoad(t *testing.T) {
 	if loaded.Telegram.BotToken != "token" || loaded.Telegram.PollTimeoutSeconds != 20 || len(loaded.Telegram.AllowedUserIDs) != 2 {
 		t.Fatalf("Telegram config = %#v", loaded.Telegram)
 	}
+	if loaded.Server.Address != "127.0.0.1:9000" || loaded.Server.StaticDir != "web/dist" || loaded.Server.SessionTTLMinutes != 60 || loaded.Server.AllowedOrigins[0] != "http://localhost:5173" {
+		t.Fatalf("server config = %#v", loaded.Server)
+	}
 }
 
 func TestLoadValidation(t *testing.T) {
@@ -58,6 +67,7 @@ func TestLoadValidation(t *testing.T) {
 		{name: "negative max tokens", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m","max_output_tokens":-1}}`, want: "max_output_tokens cannot be negative"},
 		{name: "negative iterations", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"agent":{"max_iterations":-1}}`, want: "max_iterations cannot be negative"},
 		{name: "negative Telegram poll timeout", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"telegram":{"poll_timeout_seconds":-1}}`, want: "poll_timeout_seconds cannot be negative"},
+		{name: "negative session TTL", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"server":{"session_ttl_minutes":-1}}`, want: "session_ttl_minutes must be positive"},
 		{name: "unknown field", body: `{"api":{"model":"m","unknown":true}}`, want: "unknown field"},
 		{name: "invalid JSON", body: `{`, want: "decode config"},
 		{name: "multiple values", body: `{"api":{"model":"m"}} {}`, want: "multiple JSON values"},
@@ -128,6 +138,9 @@ func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
 	}
 	if fromDisk.Telegram.BotToken != "your-telegram-bot-token" || fromDisk.Telegram.PollTimeoutSeconds != 30 {
 		t.Fatalf("Telegram config = %#v", fromDisk.Telegram)
+	}
+	if fromDisk.Server.Address != "127.0.0.1:8080" || fromDisk.Server.StaticDir != "web/dist" || fromDisk.Server.SessionTTLMinutes != 120 {
+		t.Fatalf("server config = %#v", fromDisk.Server)
 	}
 }
 

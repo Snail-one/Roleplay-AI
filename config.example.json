@@ -15,5 +15,13 @@
     "bot_token": "your-telegram-bot-token",
     "allowed_user_ids": [],
     "poll_timeout_seconds": 30
+  },
+  "server": {
+    "address": "127.0.0.1:8080",
+    "static_dir": "web/dist",
+    "allowed_origins": [
+      "http://localhost:5173"
+    ],
+    "session_ttl_minutes": 120
   }
 }

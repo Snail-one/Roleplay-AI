@@ -19,6 +19,7 @@ type Config struct {
 	API      APIConfig      `json:"api"`
 	Agent    AgentConfig    `json:"agent"`
 	Telegram TelegramConfig `json:"telegram"`
+	Server   ServerConfig   `json:"server"`
 }
 
 type APIConfig struct {
@@ -41,6 +42,13 @@ type TelegramConfig struct {
 	PollTimeoutSeconds int     `json:"poll_timeout_seconds"`
 }
 
+type ServerConfig struct {
+	Address           string   `json:"address"`
+	StaticDir         string   `json:"static_dir"`
+	AllowedOrigins    []string `json:"allowed_origins"`
+	SessionTTLMinutes int      `json:"session_ttl_minutes"`
+}
+
 func Default() Config {
 	return Config{
 		API: APIConfig{
@@ -59,6 +67,12 @@ func Default() Config {
 			BotToken:           "your-telegram-bot-token",
 			AllowedUserIDs:     []int64{},
 			PollTimeoutSeconds: 30,
+		},
+		Server: ServerConfig{
+			Address:           "127.0.0.1:8080",
+			StaticDir:         "web/dist",
+			AllowedOrigins:    []string{"http://localhost:5173"},
+			SessionTTLMinutes: 120,
 		},
 	}
 }
@@ -139,11 +153,25 @@ func (c *Config) Validate() error {
 	c.API.Model = strings.TrimSpace(c.API.Model)
 	c.Agent.SystemPrompt = strings.TrimSpace(c.Agent.SystemPrompt)
 	c.Telegram.BotToken = strings.TrimSpace(c.Telegram.BotToken)
+	c.Server.Address = strings.TrimSpace(c.Server.Address)
+	c.Server.StaticDir = strings.TrimSpace(c.Server.StaticDir)
 	if c.API.Provider == "" {
 		c.API.Provider = "openai"
 	}
 	if c.API.Provider == "anthropic" {
 		c.API.Provider = "claude"
+	}
+	if c.Server.Address == "" {
+		c.Server.Address = "127.0.0.1:8080"
+	}
+	if c.Server.StaticDir == "" {
+		c.Server.StaticDir = "web/dist"
+	}
+	if c.Server.SessionTTLMinutes == 0 {
+		c.Server.SessionTTLMinutes = 120
+	}
+	for index, origin := range c.Server.AllowedOrigins {
+		c.Server.AllowedOrigins[index] = strings.TrimRight(strings.TrimSpace(origin), "/")
 	}
 
 	if c.API.Model == "" {
@@ -168,6 +196,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Telegram.PollTimeoutSeconds < 0 {
 		return errors.New("telegram.poll_timeout_seconds cannot be negative")
+	}
+	if c.Server.SessionTTLMinutes < 1 {
+		return errors.New("server.session_ttl_minutes must be positive")
 	}
 	return nil
 }

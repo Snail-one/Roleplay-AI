@@ -1,7 +1,10 @@
 /agent
 /telegram
+/server
 /bin/
 *.test
 *.out
 .env
 config.json
+web/node_modules/
+web/dist/
