@@ -37,7 +37,7 @@ func run(configPath string) error {
 	}
 	if created {
 		fmt.Printf("已生成默认配置文件：%s\n", configPath)
-		fmt.Println("请填写 api.api_key 后重新启动。")
+		fmt.Println("请填写 api.base_url、api.api_key 和 api.model 后重新启动。")
 		return nil
 	}
 

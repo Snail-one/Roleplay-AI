@@ -111,7 +111,7 @@ func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
 	if !created {
 		t.Fatal("LoadOrCreate() created = false, want true")
 	}
-	if loaded.API.Provider != "mimo" || loaded.API.Protocol != "chat_completions" || loaded.API.Model != "mimo-v2.5-pro" {
+	if loaded.API.Provider != "openai_compatible" || loaded.API.Protocol != "" || loaded.API.BaseURL != "https://your-api-host/v1" || loaded.API.Model != "your-model" {
 		t.Fatalf("default config = %#v", loaded)
 	}
 	info, err := os.Stat(path)

@@ -38,9 +38,10 @@ type AgentConfig struct {
 func Default() Config {
 	return Config{
 		API: APIConfig{
-			Provider:        "mimo",
-			Protocol:        "chat_completions",
-			Model:           "mimo-v2.5-pro",
+			Provider:        "openai_compatible",
+			BaseURL:         "https://your-api-host/v1",
+			APIKey:          "your-api-key",
+			Model:           "your-model",
 			TimeoutSeconds:  60,
 			MaxOutputTokens: 4096,
 		},
