@@ -24,7 +24,7 @@ const (
 )
 
 type AnthropicMessagesConfig struct {
-	BaseURL                 string
+	APIURL                  string
 	APIKey                  string
 	APIKeyHeader            string
 	IncludeAnthropicVersion bool
@@ -69,19 +69,22 @@ type toolDefinition struct {
 }
 
 func NewAnthropicMessages(config AnthropicMessagesConfig) (*AnthropicMessagesClient, error) {
-	baseURL := strings.TrimSpace(config.BaseURL)
-	if baseURL == "" {
-		return nil, errors.New("base URL is required")
+	apiURL := strings.TrimRight(strings.TrimSpace(config.APIURL), "/")
+	if apiURL == "" {
+		return nil, errors.New("API URL is required")
 	}
-	parsed, err := url.Parse(baseURL)
+	parsed, err := url.Parse(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse base URL: %w", err)
+		return nil, fmt.Errorf("parse API URL: %w", err)
 	}
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return nil, errors.New("base URL must be an absolute HTTP(S) URL")
+		return nil, errors.New("API URL must be an absolute HTTP(S) URL")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("base URL cannot contain a query or fragment")
+		return nil, errors.New("API URL cannot contain a query or fragment")
+	}
+	if !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/messages") {
+		return nil, errors.New("API URL must be a complete /messages endpoint")
 	}
 
 	model := strings.TrimSpace(config.Model)
@@ -113,7 +116,7 @@ func NewAnthropicMessages(config AnthropicMessagesConfig) (*AnthropicMessagesCli
 		apiKeyHeader = "x-api-key"
 	}
 	return &AnthropicMessagesClient{
-		endpoint:                strings.TrimRight(baseURL, "/") + "/messages",
+		endpoint:                apiURL,
 		apiKey:                  strings.TrimSpace(config.APIKey),
 		apiKeyHeader:            apiKeyHeader,
 		includeAnthropicVersion: config.IncludeAnthropicVersion,

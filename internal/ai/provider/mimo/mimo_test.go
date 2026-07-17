@@ -35,7 +35,7 @@ func TestChatCompletionsProtocol(t *testing.T) {
 	defer server.Close()
 
 	backend, err := mimo.New(mimo.Config{
-		Protocol: mimo.ProtocolChatCompletions, BaseURL: server.URL + "/v1",
+		APIURL: server.URL + "/v1/chat/completions",
 		APIKey: "secret", Model: "mimo-v2.5-pro", MaxTokens: 2048,
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func TestResponsesProtocolToolRoundTrip(t *testing.T) {
 	defer server.Close()
 
 	backend, err := mimo.New(mimo.Config{
-		Protocol: mimo.ProtocolResponses, BaseURL: server.URL + "/v1",
+		APIURL: server.URL + "/v1/responses",
 		APIKey: "secret", Model: "mimo-v2.5-pro", MaxTokens: 1024,
 	})
 	if err != nil {
@@ -173,7 +173,7 @@ func TestAnthropicProtocol(t *testing.T) {
 	defer server.Close()
 
 	backend, err := mimo.New(mimo.Config{
-		Protocol: mimo.ProtocolAnthropic, BaseURL: server.URL + "/anthropic/v1",
+		APIURL: server.URL + "/anthropic/v1/messages",
 		APIKey: "secret", Model: "mimo-v2.5-pro",
 	})
 	if err != nil {
@@ -194,7 +194,7 @@ func TestResponsesProtocolReportsIncomplete(t *testing.T) {
 		_, _ = response.Write([]byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`))
 	}))
 	defer server.Close()
-	backend, err := mimo.New(mimo.Config{Protocol: mimo.ProtocolResponses, BaseURL: server.URL, Model: "model"})
+	backend, err := mimo.New(mimo.Config{APIURL: server.URL + "/v1/responses", Model: "model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,10 +205,13 @@ func TestResponsesProtocolReportsIncomplete(t *testing.T) {
 }
 
 func TestNewValidation(t *testing.T) {
-	if _, err := mimo.New(mimo.Config{Protocol: "other", Model: "model"}); err == nil {
-		t.Fatal("New() expected unsupported protocol error")
-	}
-	if _, err := mimo.New(mimo.Config{Protocol: mimo.ProtocolResponses}); err == nil {
+	if _, err := mimo.New(mimo.Config{APIURL: "https://api.xiaomimimo.com/v1/responses"}); err == nil {
 		t.Fatal("New() expected missing model error")
+	}
+	if _, err := mimo.New(mimo.Config{APIURL: "https://api.xiaomimimo.com/v1", Model: "model"}); err == nil {
+		t.Fatal("New() expected full endpoint URL error")
+	}
+	if _, err := mimo.New(mimo.Config{Model: "model"}); err == nil {
+		t.Fatal("New() expected missing API URL error")
 	}
 }

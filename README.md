@@ -5,7 +5,8 @@
 ## 功能
 
 - 终端多轮对话
-- OpenAI 与其他兼容服务的 Chat Completions 接口
+- OpenAI Chat Completions 与 Responses API
+- 其他兼容服务的 Chat Completions 接口
 - Claude 原生 Anthropic Messages API
 - 小米 MiMo Chat Completions、Responses 和 Anthropic Messages API
 - `get_current_time` 时间工具（支持 IANA 时区）
@@ -32,7 +33,7 @@ go run ./cmd/agent
 {
   "api": {
     "provider": "openai",
-    "base_url": "https://api.openai.com/v1",
+    "api_url": "https://api.openai.com/v1/chat/completions",
     "api_key": "your-api-key",
     "model": "your-model",
     "timeout_seconds": 60,
@@ -45,16 +46,26 @@ go run ./cmd/agent
 }
 ```
 
-`api.provider` 支持 `openai`、`deepseek`、`claude`、`mimo` 和 `openai_compatible`；省略时默认为 `openai`，旧配置中的 `anthropic` 会自动归一化为 `claude`。`api.model` 必填，`api.api_key` 对本地免鉴权服务可以留空。`max_output_tokens` 为 `0` 时，Claude 默认使用 4096，Chat Completions 服务则不主动发送限制。超时和最大模型调用轮数设置为 `0` 时分别使用内置默认值 60 秒和 8 轮。
+`api.provider` 支持 `openai`、`deepseek`、`claude`、`mimo` 和 `openai_compatible`；省略时默认为 `openai`，`anthropic` 会归一化为 `claude`。所有提供商都必须填写完整的 `api.api_url` 请求地址，程序不会自动追加 API 路径。`api.model` 必填，`api.api_key` 对本地免鉴权服务可以留空。`max_output_tokens` 为 `0` 时，Claude 默认使用 4096，Chat Completions 服务则不主动发送限制。超时和最大模型调用轮数设置为 `0` 时分别使用内置默认值 60 秒和 8 轮。
+
+### OpenAI
+
+OpenAI 根据完整地址选择 Chat Completions 或 Responses API：
+
+- `https://api.openai.com/v1/chat/completions`
+- `https://api.openai.com/v1/responses`
+
+Responses API 支持完整对话历史、函数调用和函数结果回传，并使用 `Authorization: Bearer` 认证。只填写 `https://api.openai.com/v1` 会报错。
 
 ### DeepSeek
 
-DeepSeek 可以省略 `base_url`，程序会使用官方地址：
+DeepSeek 支持 OpenAI Chat Completions 和 Anthropic Messages 两种地址格式。Chat Completions 示例：
 
 ```json
 {
   "api": {
     "provider": "deepseek",
+    "api_url": "https://api.deepseek.com/chat/completions",
     "api_key": "your-deepseek-key",
     "model": "deepseek-v4-pro",
     "timeout_seconds": 60,
@@ -63,14 +74,17 @@ DeepSeek 可以省略 `base_url`，程序会使用官方地址：
 }
 ```
 
+使用 Anthropic Messages 时，将地址填写为 `https://api.deepseek.com/anthropic/v1/messages`。
+
 ### Claude
 
-Claude 使用原生 Anthropic Messages API，可以省略 `base_url`：
+Claude 使用原生 Anthropic Messages API：
 
 ```json
 {
   "api": {
     "provider": "claude",
+    "api_url": "https://api.anthropic.com/v1/messages",
     "api_key": "your-anthropic-key",
     "model": "your-claude-model",
     "timeout_seconds": 60,
@@ -81,15 +95,17 @@ Claude 使用原生 Anthropic Messages API，可以省略 `base_url`：
 
 ### 其他兼容服务
 
-通义千问、Moonshot、Ollama 或自建网关等提供 OpenAI Chat Completions 兼容接口时，可选择 `openai_compatible` 并填写对应的 `base_url` 和模型名。
+通义千问、Moonshot、Ollama 或自建网关等提供 OpenAI Chat Completions 兼容接口时，可选择 `openai_compatible`，并在 `api_url` 中填写以 `/chat/completions` 结尾的完整请求地址。
 
 ### 小米 MiMo
 
-MiMo 支持三种协议，通过 `api.protocol` 选择：
+MiMo 根据完整的 `api_url` 自动识别三种 API 格式：
 
-- `chat_completions`：默认值，调用 `/v1/chat/completions`。
-- `responses`：调用 `/v1/responses`，程序负责转换完整历史和函数调用项。
-- `anthropic`：调用 `/anthropic/v1/messages`，使用 Anthropic 内容块格式。
+- 以 `/chat/completions` 结尾：使用 Chat Completions。
+- 以 `/responses` 结尾：使用 Responses，程序负责转换完整历史和函数调用项。
+- 以 `/messages` 结尾：使用 Anthropic Messages 内容块格式。
+
+程序直接请求所填写的完整地址，不会移除、追加或重复拼接端点路径。
 
 使用 Chat Completions：
 
@@ -97,7 +113,7 @@ MiMo 支持三种协议，通过 `api.protocol` 选择：
 {
   "api": {
     "provider": "mimo",
-    "protocol": "chat_completions",
+    "api_url": "https://api.xiaomimimo.com/v1/chat/completions",
     "api_key": "your-mimo-key",
     "model": "mimo-v2.5-pro",
     "timeout_seconds": 60,
@@ -106,19 +122,33 @@ MiMo 支持三种协议，通过 `api.protocol` 选择：
 }
 ```
 
-使用 Responses API 时只需修改：
+使用 Responses：
 
 ```json
-"protocol": "responses"
+{
+  "api": {
+    "provider": "mimo",
+    "api_url": "https://api.xiaomimimo.com/v1/responses",
+    "api_key": "your-mimo-key",
+    "model": "mimo-v2.5-pro"
+  }
+}
 ```
 
-使用 Anthropic Messages API 时修改为：
+使用 Anthropic Messages：
 
 ```json
-"protocol": "anthropic"
+{
+  "api": {
+    "provider": "mimo",
+    "api_url": "https://api.xiaomimimo.com/anthropic/v1/messages",
+    "api_key": "your-mimo-key",
+    "model": "mimo-v2.5-pro"
+  }
+}
 ```
 
-MiMo 未配置 `base_url` 时，Chat/Responses 默认使用 `https://api.xiaomimimo.com/v1`，Anthropic 默认使用 `https://api.xiaomimimo.com/anthropic/v1`。如使用其他 MiMo 网关或 Token Plan，可显式填写对应协议的基础地址。
+MiMo 未配置 `api_url`、只填写 API 根地址或填写无法识别的路径时会直接报错。
 
 真实配置文件 `config.json` 已加入 `.gitignore`，不要将真实密钥写入 `config.example.json` 或提交到代码仓库。
 
@@ -157,10 +187,10 @@ internal/agent            对话历史与工具调用循环
 internal/ai               统一消息类型、接口和调用客户端
 └── provider              提供商工厂与协议适配
     ├── common            共享 Chat Completions 协议
-    ├── openai            OpenAI 配置与适配
+    ├── openai            OpenAI Chat Completions 与 Responses 适配
     ├── deepseek          DeepSeek 配置与适配
     ├── claude            Claude Messages API 适配
-    ├── mimo              MiMo 三种协议适配
+    ├── mimo              MiMo 三种 API 适配（Responses 复用 OpenAI 实现）
     └── openai_compatible 其他兼容服务适配
 ```
 

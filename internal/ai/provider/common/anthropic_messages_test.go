@@ -70,7 +70,7 @@ func TestClientCompleteText(t *testing.T) {
 	defer server.Close()
 
 	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{
-		BaseURL:                 server.URL + "/v1",
+		APIURL:                  server.URL + "/v1/messages",
 		APIKey:                  "secret",
 		Model:                   "claude-test",
 		MaxTokens:               2048,
@@ -135,7 +135,7 @@ func TestClientConvertsToolCallsAndResults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{BaseURL: server.URL, Model: "claude-test"})
+	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: server.URL + "/messages", Model: "claude-test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestClientReportsMaxTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{BaseURL: server.URL, Model: "claude-test", MaxTokens: 10})
+	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: server.URL + "/messages", Model: "claude-test", MaxTokens: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestClientReportsAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{BaseURL: server.URL, Model: "claude-test"})
+	client, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: server.URL + "/messages", Model: "claude-test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,13 +195,16 @@ func TestClientReportsAPIError(t *testing.T) {
 }
 
 func TestNewValidation(t *testing.T) {
-	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{BaseURL: "relative", Model: "model"}); err == nil {
+	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: "relative", Model: "model"}); err == nil {
 		t.Fatal("New() expected invalid URL error")
 	}
-	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{}); err == nil {
+	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: "https://example.com/v1", Model: "model"}); err == nil {
+		t.Fatal("New() expected full endpoint URL error")
+	}
+	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: "https://example.com/v1/messages"}); err == nil {
 		t.Fatal("New() expected missing model error")
 	}
-	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{Model: "model", MaxTokens: -1}); err == nil {
+	if _, err := common.NewAnthropicMessages(common.AnthropicMessagesConfig{APIURL: "https://example.com/v1/messages", Model: "model", MaxTokens: -1}); err == nil {
 		t.Fatal("New() expected max tokens error")
 	}
 }

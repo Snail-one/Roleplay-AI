@@ -7,7 +7,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	backend, err := claude.New(claude.Config{Model: "claude-model"})
+	backend, err := claude.New(claude.Config{APIURL: "https://api.anthropic.com/v1/messages", Model: "claude-model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewRequiresModel(t *testing.T) {
-	if _, err := claude.New(claude.Config{}); err == nil {
+	if _, err := claude.New(claude.Config{APIURL: "https://api.anthropic.com/v1/messages"}); err == nil {
 		t.Fatal("New() expected missing model error")
 	}
 }

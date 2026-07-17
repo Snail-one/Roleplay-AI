@@ -15,8 +15,7 @@ import (
 
 type Config struct {
 	Provider  string
-	Protocol  string
-	BaseURL   string
+	APIURL    string
 	APIKey    string
 	Model     string
 	MaxTokens int
@@ -33,28 +32,27 @@ func New(config Config) (*ai.Client, error) {
 	switch strings.ToLower(strings.TrimSpace(config.Provider)) {
 	case "", "openai":
 		backend, err = openai.New(openai.Config{
-			BaseURL: config.BaseURL, APIKey: config.APIKey, Model: config.Model,
+			APIURL: config.APIURL, APIKey: config.APIKey, Model: config.Model,
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
 	case "deepseek":
 		backend, err = deepseek.New(deepseek.Config{
-			BaseURL: config.BaseURL, APIKey: config.APIKey, Model: config.Model,
+			APIURL: config.APIURL, APIKey: config.APIKey, Model: config.Model,
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
 	case "mimo":
 		backend, err = mimo.New(mimo.Config{
-			Protocol: config.Protocol, BaseURL: config.BaseURL,
-			APIKey: config.APIKey, Model: config.Model,
+			APIURL: config.APIURL, APIKey: config.APIKey, Model: config.Model,
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
 	case "claude", "anthropic":
 		backend, err = claude.New(claude.Config{
-			BaseURL: config.BaseURL, APIKey: config.APIKey, Model: config.Model,
+			APIURL: config.APIURL, APIKey: config.APIKey, Model: config.Model,
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
 	case "openai_compatible":
 		backend, err = openaicompatible.New(openaicompatible.Config{
-			BaseURL: config.BaseURL, APIKey: config.APIKey, Model: config.Model,
+			APIURL: config.APIURL, APIKey: config.APIKey, Model: config.Model,
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
 	default:

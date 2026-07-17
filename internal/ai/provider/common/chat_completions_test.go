@@ -43,7 +43,7 @@ func TestClientComplete(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewChatCompletions(ChatCompletionsConfig{
-		BaseURL:   server.URL + "/v1/",
+		APIURL:    server.URL + "/v1/chat/completions",
 		APIKey:    "secret",
 		Model:     "test-model",
 		MaxTokens: 2048,
@@ -90,7 +90,7 @@ func TestClientDecodesToolCallsAndOmitsEmptyAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: server.URL, Model: "model"})
+	client, err := NewChatCompletions(ChatCompletionsConfig{APIURL: server.URL + "/chat/completions", Model: "model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestClientReportsAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: server.URL, Model: "model"})
+	client, err := NewChatCompletions(ChatCompletionsConfig{APIURL: server.URL + "/chat/completions", Model: "model"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestClientRejectsMalformedResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: server.URL, Model: "model"})
+			client, err := NewChatCompletions(ChatCompletionsConfig{APIURL: server.URL + "/chat/completions", Model: "model"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -169,7 +169,7 @@ func TestClientTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: server.URL, Model: "model", Timeout: 20 * time.Millisecond})
+	client, err := NewChatCompletions(ChatCompletionsConfig{APIURL: server.URL + "/chat/completions", Model: "model", Timeout: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,13 +180,16 @@ func TestClientTimeout(t *testing.T) {
 }
 
 func TestNewClientValidation(t *testing.T) {
-	if _, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: "relative", Model: "model"}); err == nil {
+	if _, err := NewChatCompletions(ChatCompletionsConfig{APIURL: "relative", Model: "model"}); err == nil {
 		t.Fatal("NewClient() expected invalid URL error")
 	}
-	if _, err := NewChatCompletions(ChatCompletionsConfig{BaseURL: "https://example.com/v1?x=1", Model: "model"}); err == nil {
+	if _, err := NewChatCompletions(ChatCompletionsConfig{APIURL: "https://example.com/v1/chat/completions?x=1", Model: "model"}); err == nil {
 		t.Fatal("NewClient() expected query error")
 	}
-	if _, err := NewChatCompletions(ChatCompletionsConfig{}); err == nil {
+	if _, err := NewChatCompletions(ChatCompletionsConfig{APIURL: "https://example.com/v1", Model: "model"}); err == nil {
+		t.Fatal("NewClient() expected full endpoint URL error")
+	}
+	if _, err := NewChatCompletions(ChatCompletionsConfig{APIURL: "https://example.com/v1/chat/completions"}); err == nil {
 		t.Fatal("NewClient() expected missing model error")
 	}
 }

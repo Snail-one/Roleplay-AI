@@ -2,24 +2,23 @@ package mimo
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"roleloom/internal/ai"
 	"roleloom/internal/ai/provider/common"
+	"roleloom/internal/ai/provider/openai"
 )
 
 const (
-	defaultOpenAIBaseURL    = "https://api.xiaomimimo.com/v1"
-	defaultAnthropicBaseURL = "https://api.xiaomimimo.com/anthropic/v1"
-	ProtocolChatCompletions = "chat_completions"
-	ProtocolResponses       = "responses"
-	ProtocolAnthropic       = "anthropic"
+	protocolChatCompletions = "chat_completions"
+	protocolResponses       = "responses"
+	protocolAnthropic       = "anthropic"
 )
 
 type Config struct {
-	Protocol  string
-	BaseURL   string
+	APIURL    string
 	APIKey    string
 	Model     string
 	MaxTokens int
@@ -27,43 +26,63 @@ type Config struct {
 }
 
 func New(config Config) (ai.Backend, error) {
-	baseURL := strings.TrimSpace(config.BaseURL)
-	protocol := strings.ToLower(strings.TrimSpace(config.Protocol))
-	if protocol == "" {
-		protocol = ProtocolChatCompletions
+	protocol, apiURL, err := resolveProtocol(config.APIURL)
+	if err != nil {
+		return nil, err
 	}
 
 	switch protocol {
-	case ProtocolChatCompletions:
-		if baseURL == "" {
-			baseURL = defaultOpenAIBaseURL
-		}
+	case protocolChatCompletions:
 		return common.NewChatCompletions(common.ChatCompletionsConfig{
-			BaseURL:        baseURL,
+			APIURL:         apiURL,
 			APIKey:         config.APIKey,
 			Model:          config.Model,
 			MaxTokens:      config.MaxTokens,
 			MaxTokensField: "max_completion_tokens",
 			Timeout:        config.Timeout,
 		})
-	case ProtocolResponses:
-		if baseURL == "" {
-			baseURL = defaultOpenAIBaseURL
-		}
-		return newResponsesClient(responsesConfig{
-			BaseURL: baseURL, APIKey: config.APIKey, Model: config.Model,
+	case protocolResponses:
+		return openai.NewResponses(openai.ResponsesConfig{
+			APIURL: apiURL, APIKey: config.APIKey, Model: config.Model,
+			APIKeyHeader: "api-key", ReasoningEffort: "none",
 			MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
-	case ProtocolAnthropic:
-		if baseURL == "" {
-			baseURL = defaultAnthropicBaseURL
-		}
+	case protocolAnthropic:
 		return common.NewAnthropicMessages(common.AnthropicMessagesConfig{
-			BaseURL: baseURL, APIKey: config.APIKey,
+			APIURL: apiURL, APIKey: config.APIKey,
 			APIKeyHeader: "api-key", DisableThinking: true,
 			Model: config.Model, MaxTokens: config.MaxTokens, Timeout: config.Timeout,
 		})
+	}
+	return nil, fmt.Errorf("unsupported inferred MiMo protocol %q", protocol)
+}
+
+func resolveProtocol(configuredURL string) (string, string, error) {
+	apiURL := strings.TrimRight(strings.TrimSpace(configuredURL), "/")
+	if apiURL == "" {
+		return "", "", fmt.Errorf("MiMo API URL is required")
+	}
+
+	parsed, err := url.Parse(apiURL)
+	if err != nil {
+		return "", "", fmt.Errorf("parse MiMo API URL: %w", err)
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", "", fmt.Errorf("MiMo API URL must be an absolute HTTP(S) URL")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", "", fmt.Errorf("MiMo API URL must not contain a query or fragment")
+	}
+
+	path := strings.TrimRight(parsed.Path, "/")
+	switch {
+	case strings.HasSuffix(path, "/chat/completions"):
+		return protocolChatCompletions, apiURL, nil
+	case strings.HasSuffix(path, "/responses"):
+		return protocolResponses, apiURL, nil
+	case strings.HasSuffix(path, "/messages"):
+		return protocolAnthropic, apiURL, nil
 	default:
-		return nil, fmt.Errorf("unsupported MiMo protocol %q", config.Protocol)
+		return "", "", fmt.Errorf("unsupported MiMo API URL %q: expected /chat/completions, /responses, or /messages endpoint", configuredURL)
 	}
 }

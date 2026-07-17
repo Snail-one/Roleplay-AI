@@ -8,7 +8,7 @@ import (
 )
 
 type Config struct {
-	BaseURL   string
+	APIURL    string
 	APIKey    string
 	Model     string
 	MaxTokens int
@@ -17,7 +17,7 @@ type Config struct {
 
 func New(config Config) (ai.Backend, error) {
 	return common.NewChatCompletions(common.ChatCompletionsConfig{
-		BaseURL:   config.BaseURL,
+		APIURL:    config.APIURL,
 		APIKey:    config.APIKey,
 		Model:     config.Model,
 		MaxTokens: config.MaxTokens,

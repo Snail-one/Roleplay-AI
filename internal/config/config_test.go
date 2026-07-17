@@ -13,7 +13,7 @@ func TestLoad(t *testing.T) {
 	path := writeConfig(t, `{
         "api": {
 			"provider": " DEEPSEEK ",
-            "base_url": " https://example.com/v1 ",
+			"api_url": " https://example.com/chat/completions ",
             "api_key": " secret ",
             "model": " model-name ",
 			"timeout_seconds": 30,
@@ -29,7 +29,7 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.API.Provider != "deepseek" || loaded.API.BaseURL != "https://example.com/v1" || loaded.API.APIKey != "secret" || loaded.API.Model != "model-name" {
+	if loaded.API.Provider != "deepseek" || loaded.API.APIURL != "https://example.com/chat/completions" || loaded.API.APIKey != "secret" || loaded.API.Model != "model-name" {
 		t.Fatalf("API config = %#v", loaded.API)
 	}
 	if loaded.API.TimeoutSeconds != 30 || loaded.API.MaxOutputTokens != 2048 || loaded.Agent.SystemPrompt != "be helpful" || loaded.Agent.MaxIterations != 4 {
@@ -43,13 +43,12 @@ func TestLoadValidation(t *testing.T) {
 		body string
 		want string
 	}{
-		{name: "missing model", body: `{"api":{}}`, want: "api.model is required"},
-		{name: "unknown provider", body: `{"api":{"provider":"other","model":"m"}}`, want: "unsupported api.provider"},
-		{name: "unknown MiMo protocol", body: `{"api":{"provider":"mimo","protocol":"other","model":"m"}}`, want: "unsupported MiMo api.protocol"},
-		{name: "protocol on other provider", body: `{"api":{"provider":"openai","protocol":"responses","model":"m"}}`, want: "protocol is only supported"},
-		{name: "negative timeout", body: `{"api":{"model":"m","timeout_seconds":-1}}`, want: "timeout_seconds cannot be negative"},
-		{name: "negative max tokens", body: `{"api":{"model":"m","max_output_tokens":-1}}`, want: "max_output_tokens cannot be negative"},
-		{name: "negative iterations", body: `{"api":{"model":"m"},"agent":{"max_iterations":-1}}`, want: "max_iterations cannot be negative"},
+		{name: "missing model", body: `{"api":{"api_url":"https://example.com/chat/completions"}}`, want: "api.model is required"},
+		{name: "missing API URL", body: `{"api":{"model":"m"}}`, want: "api.api_url is required"},
+		{name: "unknown provider", body: `{"api":{"provider":"other","api_url":"https://example.com/chat/completions","model":"m"}}`, want: "unsupported api.provider"},
+		{name: "negative timeout", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m","timeout_seconds":-1}}`, want: "timeout_seconds cannot be negative"},
+		{name: "negative max tokens", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m","max_output_tokens":-1}}`, want: "max_output_tokens cannot be negative"},
+		{name: "negative iterations", body: `{"api":{"api_url":"https://example.com/chat/completions","model":"m"},"agent":{"max_iterations":-1}}`, want: "max_iterations cannot be negative"},
 		{name: "unknown field", body: `{"api":{"model":"m","unknown":true}}`, want: "unknown field"},
 		{name: "invalid JSON", body: `{`, want: "decode config"},
 		{name: "multiple values", body: `{"api":{"model":"m"}} {}`, want: "multiple JSON values"},
@@ -65,18 +64,8 @@ func TestLoadValidation(t *testing.T) {
 	}
 }
 
-func TestLoadDefaultsMiMoProtocol(t *testing.T) {
-	loaded, err := config.Load(writeConfig(t, `{"api":{"provider":"mimo","model":"mimo-v2.5-pro"}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.API.Protocol != "chat_completions" {
-		t.Fatalf("protocol = %q, want chat_completions", loaded.API.Protocol)
-	}
-}
-
 func TestLoadDefaultsProvider(t *testing.T) {
-	loaded, err := config.Load(writeConfig(t, `{"api":{"model":"m"}}`))
+	loaded, err := config.Load(writeConfig(t, `{"api":{"api_url":"https://example.com/chat/completions","model":"m"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +75,7 @@ func TestLoadDefaultsProvider(t *testing.T) {
 }
 
 func TestLoadNormalizesAnthropicAlias(t *testing.T) {
-	loaded, err := config.Load(writeConfig(t, `{"api":{"provider":"anthropic","model":"m"}}`))
+	loaded, err := config.Load(writeConfig(t, `{"api":{"provider":"anthropic","api_url":"https://example.com/messages","model":"m"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +100,7 @@ func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
 	if !created {
 		t.Fatal("LoadOrCreate() created = false, want true")
 	}
-	if loaded.API.Provider != "openai_compatible" || loaded.API.Protocol != "" || loaded.API.BaseURL != "https://your-api-host/v1" || loaded.API.Model != "your-model" {
+	if loaded.API.Provider != "openai_compatible" || loaded.API.APIURL != "https://your-api-host/v1/chat/completions" || loaded.API.Model != "your-model" {
 		t.Fatalf("default config = %#v", loaded)
 	}
 	info, err := os.Stat(path)
@@ -131,7 +120,7 @@ func TestLoadOrCreateCreatesSecureDefault(t *testing.T) {
 }
 
 func TestLoadOrCreatePreservesExistingConfig(t *testing.T) {
-	path := writeConfig(t, `{"api":{"provider":"deepseek","model":"model"}}`)
+	path := writeConfig(t, `{"api":{"provider":"deepseek","api_url":"https://api.deepseek.com/chat/completions","model":"model"}}`)
 	loaded, created, err := config.LoadOrCreate(path)
 	if err != nil {
 		t.Fatal(err)

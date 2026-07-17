@@ -1,8 +1,7 @@
 {
   "api": {
     "provider": "openai_compatible",
-    "protocol": "",
-    "base_url": "https://your-api-host/v1",
+    "api_url": "https://your-api-host/v1/chat/completions",
     "api_key": "your-api-key",
     "model": "your-model",
     "timeout_seconds": 60,

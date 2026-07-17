@@ -22,8 +22,7 @@ type Config struct {
 
 type APIConfig struct {
 	Provider        string `json:"provider"`
-	Protocol        string `json:"protocol"`
-	BaseURL         string `json:"base_url"`
+	APIURL          string `json:"api_url"`
 	APIKey          string `json:"api_key"`
 	Model           string `json:"model"`
 	TimeoutSeconds  int    `json:"timeout_seconds"`
@@ -39,7 +38,7 @@ func Default() Config {
 	return Config{
 		API: APIConfig{
 			Provider:        "openai_compatible",
-			BaseURL:         "https://your-api-host/v1",
+			APIURL:          "https://your-api-host/v1/chat/completions",
 			APIKey:          "your-api-key",
 			Model:           "your-model",
 			TimeoutSeconds:  60,
@@ -123,8 +122,7 @@ func Load(path string) (Config, error) {
 
 func (c *Config) Validate() error {
 	c.API.Provider = strings.ToLower(strings.TrimSpace(c.API.Provider))
-	c.API.Protocol = strings.ToLower(strings.TrimSpace(c.API.Protocol))
-	c.API.BaseURL = strings.TrimSpace(c.API.BaseURL)
+	c.API.APIURL = strings.TrimSpace(c.API.APIURL)
 	c.API.APIKey = strings.TrimSpace(c.API.APIKey)
 	c.API.Model = strings.TrimSpace(c.API.Model)
 	c.Agent.SystemPrompt = strings.TrimSpace(c.Agent.SystemPrompt)
@@ -138,22 +136,13 @@ func (c *Config) Validate() error {
 	if c.API.Model == "" {
 		return errors.New("api.model is required")
 	}
+	if c.API.APIURL == "" {
+		return errors.New("api.api_url is required")
+	}
 	switch c.API.Provider {
 	case "openai", "openai_compatible", "deepseek", "claude", "mimo":
 	default:
 		return fmt.Errorf("unsupported api.provider %q", c.API.Provider)
-	}
-	if c.API.Provider == "mimo" {
-		if c.API.Protocol == "" {
-			c.API.Protocol = "chat_completions"
-		}
-		switch c.API.Protocol {
-		case "chat_completions", "responses", "anthropic":
-		default:
-			return fmt.Errorf("unsupported MiMo api.protocol %q", c.API.Protocol)
-		}
-	} else if c.API.Protocol != "" {
-		return errors.New("api.protocol is only supported when api.provider is mimo")
 	}
 	if c.API.TimeoutSeconds < 0 {
 		return errors.New("api.timeout_seconds cannot be negative")

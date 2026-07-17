@@ -1,6 +1,8 @@
 package deepseek
 
 import (
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -8,28 +10,50 @@ import (
 	"roleloom/internal/ai/provider/common"
 )
 
-const defaultBaseURL = "https://api.deepseek.com"
-
 type Config struct {
-	BaseURL   string
+	APIURL    string
 	APIKey    string
 	Model     string
 	MaxTokens int
 	Timeout   time.Duration
 }
 
-// New creates a DeepSeek backend. The shared Chat Completions transport also
-// preserves DeepSeek reasoning_content during tool-call round trips.
 func New(config Config) (ai.Backend, error) {
-	baseURL := strings.TrimSpace(config.BaseURL)
-	if baseURL == "" {
-		baseURL = defaultBaseURL
+	apiURL := strings.TrimRight(strings.TrimSpace(config.APIURL), "/")
+	if err := validateEndpoint(apiURL); err != nil {
+		return nil, err
 	}
-	return common.NewChatCompletions(common.ChatCompletionsConfig{
-		BaseURL:   baseURL,
-		APIKey:    config.APIKey,
-		Model:     config.Model,
-		MaxTokens: config.MaxTokens,
-		Timeout:   config.Timeout,
-	})
+
+	switch {
+	case strings.HasSuffix(apiURL, "/chat/completions"):
+		return common.NewChatCompletions(common.ChatCompletionsConfig{
+			APIURL: apiURL, APIKey: config.APIKey, Model: config.Model,
+			MaxTokens: config.MaxTokens, MaxTokensField: "max_tokens", Timeout: config.Timeout,
+		})
+	case strings.HasSuffix(apiURL, "/messages"):
+		return common.NewAnthropicMessages(common.AnthropicMessagesConfig{
+			APIURL: apiURL, APIKey: config.APIKey,
+			APIKeyHeader: "x-api-key", DisableThinking: true,
+			Model: config.Model, MaxTokens: config.MaxTokens, Timeout: config.Timeout,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported DeepSeek API URL %q: expected /chat/completions or /messages endpoint", config.APIURL)
+	}
+}
+
+func validateEndpoint(apiURL string) error {
+	if apiURL == "" {
+		return fmt.Errorf("DeepSeek API URL is required")
+	}
+	parsed, err := url.Parse(apiURL)
+	if err != nil {
+		return fmt.Errorf("parse DeepSeek API URL: %w", err)
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("DeepSeek API URL must be an absolute HTTP(S) URL")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("DeepSeek API URL cannot contain a query or fragment")
+	}
+	return nil
 }

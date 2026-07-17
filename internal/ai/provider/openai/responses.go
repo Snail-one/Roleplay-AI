@@ -1,4 +1,4 @@
-package mimo
+package openai
 
 import (
 	"bytes"
@@ -16,26 +16,30 @@ import (
 )
 
 const (
-	defaultTimeout      = 60 * time.Second
-	maxResponseBodySize = 16 << 20
-	maxErrorBodySize    = 8 << 10
+	responsesDefaultTimeout      = 60 * time.Second
+	responsesMaxResponseBodySize = 16 << 20
+	responsesMaxErrorBodySize    = 8 << 10
 )
 
-type responsesConfig struct {
-	BaseURL    string
-	APIKey     string
-	Model      string
-	MaxTokens  int
-	Timeout    time.Duration
-	HTTPClient *http.Client
+type ResponsesConfig struct {
+	APIURL          string
+	APIKey          string
+	APIKeyHeader    string
+	Model           string
+	ReasoningEffort string
+	MaxTokens       int
+	Timeout         time.Duration
+	HTTPClient      *http.Client
 }
 
 type responsesClient struct {
-	endpoint   string
-	apiKey     string
-	model      string
-	maxTokens  int
-	httpClient *http.Client
+	endpoint        string
+	apiKey          string
+	apiKeyHeader    string
+	model           string
+	reasoningEffort string
+	maxTokens       int
+	httpClient      *http.Client
 }
 
 type responseInputItem struct {
@@ -55,18 +59,25 @@ type responseTool struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-func newResponsesClient(config responsesConfig) (*responsesClient, error) {
-	baseURL := strings.TrimSpace(config.BaseURL)
-	parsed, err := url.Parse(baseURL)
+func NewResponses(config ResponsesConfig) (ai.Backend, error) {
+	apiURL := strings.TrimRight(strings.TrimSpace(config.APIURL), "/")
+	if apiURL == "" {
+		return nil, errors.New("API URL is required")
+	}
+	parsed, err := url.Parse(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse base URL: %w", err)
+		return nil, fmt.Errorf("parse API URL: %w", err)
 	}
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return nil, errors.New("base URL must be an absolute HTTP(S) URL")
+		return nil, errors.New("API URL must be an absolute HTTP(S) URL")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("base URL cannot contain a query or fragment")
+		return nil, errors.New("API URL cannot contain a query or fragment")
 	}
+	if !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/responses") {
+		return nil, errors.New("API URL must be a complete /responses endpoint")
+	}
+
 	model := strings.TrimSpace(config.Model)
 	if model == "" {
 		return nil, errors.New("model is required")
@@ -75,11 +86,24 @@ func newResponsesClient(config responsesConfig) (*responsesClient, error) {
 		return nil, errors.New("max tokens cannot be negative")
 	}
 
+	apiKeyHeader := strings.TrimSpace(config.APIKeyHeader)
+	if apiKeyHeader == "" {
+		apiKeyHeader = "Authorization"
+	}
+	switch {
+	case strings.EqualFold(apiKeyHeader, "Authorization"):
+		apiKeyHeader = "Authorization"
+	case strings.EqualFold(apiKeyHeader, "api-key"):
+		apiKeyHeader = "api-key"
+	default:
+		return nil, fmt.Errorf("unsupported API key header %q", config.APIKeyHeader)
+	}
+
 	httpClient := config.HTTPClient
 	if httpClient == nil {
 		timeout := config.Timeout
 		if timeout == 0 {
-			timeout = defaultTimeout
+			timeout = responsesDefaultTimeout
 		}
 		if timeout < 0 {
 			return nil, errors.New("timeout cannot be negative")
@@ -88,8 +112,8 @@ func newResponsesClient(config responsesConfig) (*responsesClient, error) {
 	}
 
 	return &responsesClient{
-		endpoint: strings.TrimRight(baseURL, "/") + "/responses",
-		apiKey:   strings.TrimSpace(config.APIKey), model: model,
+		endpoint: apiURL, apiKey: strings.TrimSpace(config.APIKey), apiKeyHeader: apiKeyHeader,
+		model: model, reasoningEffort: strings.TrimSpace(config.ReasoningEffort),
 		maxTokens: config.MaxTokens, httpClient: httpClient,
 	}, nil
 }
@@ -108,6 +132,9 @@ func (c *responsesClient) Complete(ctx context.Context, history []ai.Message, de
 		})
 	}
 
+	type reasoningConfig struct {
+		Effort string `json:"effort"`
+	}
 	requestBody := struct {
 		Model           string              `json:"model"`
 		Instructions    string              `json:"instructions,omitempty"`
@@ -115,14 +142,14 @@ func (c *responsesClient) Complete(ctx context.Context, history []ai.Message, de
 		Tools           []responseTool      `json:"tools,omitempty"`
 		MaxOutputTokens int                 `json:"max_output_tokens,omitempty"`
 		Stream          bool                `json:"stream"`
-		Reasoning       struct {
-			Effort string `json:"effort"`
-		} `json:"reasoning"`
+		Reasoning       *reasoningConfig    `json:"reasoning,omitempty"`
 	}{
 		Model: c.model, Instructions: instructions, Input: input,
 		Tools: tools, MaxOutputTokens: c.maxTokens,
 	}
-	requestBody.Reasoning.Effort = "none"
+	if c.reasoningEffort != "" {
+		requestBody.Reasoning = &reasoningConfig{Effort: c.reasoningEffort}
+	}
 	encoded, err := json.Marshal(requestBody)
 	if err != nil {
 		return ai.Message{}, fmt.Errorf("encode request: %w", err)
@@ -136,7 +163,11 @@ func (c *responsesClient) Complete(ctx context.Context, history []ai.Message, de
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "roleloom-agent/1.0")
 	if c.apiKey != "" {
-		request.Header.Set("api-key", c.apiKey)
+		value := c.apiKey
+		if strings.EqualFold(c.apiKeyHeader, "Authorization") {
+			value = "Bearer " + value
+		}
+		request.Header.Set(c.apiKeyHeader, value)
 	}
 
 	response, err := c.httpClient.Do(request)
@@ -145,7 +176,7 @@ func (c *responsesClient) Complete(ctx context.Context, history []ai.Message, de
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxErrorBodySize))
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, responsesMaxErrorBodySize))
 		if readErr != nil {
 			return ai.Message{}, fmt.Errorf("API returned %s (failed to read error body: %v)", response.Status, readErr)
 		}
@@ -176,7 +207,7 @@ func (c *responsesClient) Complete(ctx context.Context, history []ai.Message, de
 			} `json:"content"`
 		} `json:"output"`
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, maxResponseBodySize+1))
+	decoder := json.NewDecoder(io.LimitReader(response.Body, responsesMaxResponseBodySize+1))
 	if err := decoder.Decode(&payload); err != nil {
 		return ai.Message{}, fmt.Errorf("decode response: %w", err)
 	}
