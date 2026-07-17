@@ -61,6 +61,12 @@ func TestAuthenticationOriginAndSecretRedaction(t *testing.T) {
 		t.Fatalf("unauthorized=%d", w.Code)
 	}
 	cookie := login(t, h)
+	for _, path := range []string{"/api/model-profiles", "/api/characters", "/api/conversations"} {
+		empty := request(t, h, "GET", "http://example.test"+path, "", cookie)
+		if empty.Code != 200 || strings.TrimSpace(empty.Body.String()) != "[]" {
+			t.Fatalf("empty list %s = %d %q", path, empty.Code, empty.Body.String())
+		}
+	}
 	body := `{"name":"main","provider":"openai","api_url":"https://example.test/v1/chat/completions","api_key":"top-secret","model":"gpt-test","is_default":true}`
 	w := request(t, h, "POST", "http://example.test/api/model-profiles", body, cookie)
 	if w.Code != 201 {

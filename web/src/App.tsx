@@ -16,7 +16,7 @@ function Login({onLogin}:{onLogin:()=>void}) {
 
 function App(){
   const [auth,setAuth]=useState<'loading'|'yes'|'no'>('loading'),[view,setView]=useState<View>('chat'),[models,setModels]=useState<ModelProfile[]>([]),[characters,setCharacters]=useState<Character[]>([]),[conversations,setConversations]=useState<Conversation[]>([]),[activeID,setActiveID]=useState(''),[error,setError]=useState('')
-  async function load(){try{const [m,c,v]=await Promise.all([api.models(),api.characters(),api.conversations()]);setModels(m);setCharacters(c);setConversations(v);setActiveID(id=>id||v[0]?.id||'')}catch(e){if(e instanceof ApiError&&e.status===401)setAuth('no');else setError(messageOf(e))}}
+  async function load(){try{const [modelResult,characterResult,conversationResult]=await Promise.all([api.models(),api.characters(),api.conversations()]);const m=Array.isArray(modelResult)?modelResult:[],c=Array.isArray(characterResult)?characterResult:[],v=Array.isArray(conversationResult)?conversationResult:[];setModels(m);setCharacters(c);setConversations(v);setActiveID(id=>id||v[0]?.id||'')}catch(e){if(e instanceof ApiError&&e.status===401)setAuth('no');else setError(messageOf(e))}}
   useEffect(()=>{void api.session().then(()=>{setAuth('yes');return load()}).catch(()=>setAuth('no'))},[])
   if(auth==='loading')return <main className="loading">正在打开 RoleLoom…</main>
   if(auth==='no')return <Login onLogin={()=>{setAuth('yes');void load()}}/>

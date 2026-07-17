@@ -171,7 +171,7 @@ func (s *Store) ListModelProfiles(ctx context.Context) ([]domain.ModelProfile, e
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.ModelProfile
+	out := make([]domain.ModelProfile, 0)
 	for rows.Next() {
 		p, err := scanModel(rows)
 		if err != nil {
@@ -293,7 +293,7 @@ func (s *Store) ListCharacters(ctx context.Context) ([]domain.Character, error) 
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.Character
+	out := make([]domain.Character, 0)
 	for rows.Next() {
 		c, e := scanCharacter(rows)
 		if e != nil {
@@ -379,7 +379,7 @@ func (s *Store) ListConversations(ctx context.Context) ([]domain.Conversation, e
 		return nil, e
 	}
 	defer rows.Close()
-	var out []domain.Conversation
+	out := make([]domain.Conversation, 0)
 	for rows.Next() {
 		c, e := scanConversation(rows)
 		if e != nil {

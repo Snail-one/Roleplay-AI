@@ -23,6 +23,12 @@ describe('App',()=>{
     expect((screen.getByLabelText('新 API Key（留空则保留）') as HTMLInputElement).value).toBe('')
   })
 
+  it('treats legacy null list responses as empty lists',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL)=>{const path=String(input);if(path.endsWith('/api/auth/session'))return json({authenticated:true});if(path.endsWith('/api/model-profiles')||path.endsWith('/api/characters')||path.endsWith('/api/conversations'))return json(null);return json({},404)}))
+    render(<App/>)
+    expect(await screen.findByText('先在“角色”页创建一个角色。')).toBeTruthy()
+  })
+
   it('logs in and loads the database-backed workspace',async()=>{
     const fetchMock=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const path=String(input);if(path.endsWith('/api/auth/session'))return json({},401);if(path.endsWith('/api/auth/login')&&init?.method==='POST')return json({authenticated:true});if(path.endsWith('/api/model-profiles')||path.endsWith('/api/characters')||path.endsWith('/api/conversations'))return json([]);return json({},404)})
     vi.stubGlobal('fetch',fetchMock);render(<App/>);const password=await screen.findByLabelText('管理员密码');fireEvent.change(password,{target:{value:'a secure password'}});fireEvent.click(screen.getByRole('button',{name:'登录'}));await waitFor(()=>expect(screen.getByText('RoleLoom')).toBeTruthy());expect(fetchMock).toHaveBeenCalledWith('/api/auth/login',expect.objectContaining({method:'POST'}))
